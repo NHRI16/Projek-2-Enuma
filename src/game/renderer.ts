@@ -280,8 +280,11 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
         draw('cube', P(0,0,0, sc.x, sc.y, sc.z), c);
         draw('cube', P(0, 0, sc.z/2 + 0.004, sc.x-0.035, sc.y-0.035, 0.006), ghost ? c : [0.16,0.30,0.52], ghost?0:0.55);
         if (!ghost) { // "konten" layar
-          for (let i = 0; i < 3; i++)
-            draw('cube', P(-sc.x/2 + 0.09 + i*0.02, sc.y/2 - 0.06 - i*0.055, sc.z/2 + 0.008, sc.x*0.55 - i*0.06, 0.016, 0.003), [0.55,0.72,0.95], 0.7);
+          for (let i = 0; i < 3; i++) {
+            const w = sc.x*0.55 - i*0.06;
+            const lx = -sc.x/2 + 0.05 + w/2 + i*0.02;
+            draw('cube', P(lx, sc.y/2 - 0.06 - i*0.055, sc.z/2 + 0.008, w, 0.016, 0.003), [0.55,0.72,0.95], 0.7);
+          }
         }
         draw('cube', P(0, -sc.y/2 - 0.075, 0, 0.05, 0.15, 0.045), [0.28,0.28,0.32]);
         draw('cube', P(0, -sc.y/2 - 0.155, 0.02, 0.24, 0.018, 0.15), [0.26,0.26,0.30]);

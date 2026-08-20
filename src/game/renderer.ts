@@ -47,6 +47,13 @@ const lookDir = (ex: number, ey: number, ez: number, yaw: number, pitch: number)
 const nMat = (m: Float32Array) => new Float32Array([m[0],m[1],m[2], m[4],m[5],m[6], m[8],m[9],m[10]]);
 const hex = (h: string): V3 => { const v = parseInt(h.replace('#',''),16); return [(v>>16&255)/255,(v>>8&255)/255,(v&255)/255]; };
 const shade = (c: V3, f: number): V3 => [Math.min(1,c[0]*f), Math.min(1,c[1]*f), Math.min(1,c[2]*f)];
+/** Matriks rotasi dari tiga vektor basis ortogonal (kolom = arah lokal X, Y, Z di ruang dunia) */
+const mkRot = (lx: V3, ly: V3, lz: V3): Float32Array => new Float32Array([
+  lx[0], lx[1], lx[2], 0,
+  ly[0], ly[1], ly[2], 0,
+  lz[0], lz[1], lz[2], 0,
+  0,     0,     0,     1,
+]);
 
 /** Transformasi bagian anak: induk(posisi+rotasi) → offset lokal → skala.
  *  Inilah kunci agar objek TIDAK terpotong / tercerai saat diputar. */
@@ -178,14 +185,49 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     gl!.drawElements(gl!.TRIANGLES,b.n,gl!.UNSIGNED_SHORT,0);
   }
 
-  /** Kabel: rangkaian manik-manik mengikuti kurva melengkung (sag) */
+  /**
+   * Segmen kabel: menggambar silinder 3D yang terorientasi dari titik a ke b.
+   * Menggunakan Gram-Schmidt untuk membangun frame lokal sehingga sumbu-Y
+   * silinder sejajar dengan arah kabel.
+   */
+  function cableSegment(a: V3, b: V3, r: number, col: V3) {
+    const dx = b[0]-a[0], dy = b[1]-a[1], dz = b[2]-a[2];
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 0.001) return;
+    // Arah kabel = sumbu-Y lokal
+    const ly: V3 = [dx/len, dy/len, dz/len];
+    // Pilih vektor "atas" yang tidak sejajar dengan ly
+    const up: V3 = Math.abs(ly[1]) < 0.85 ? [0, 1, 0] : [1, 0, 0];
+    // Sumbu-X lokal = cross(ly, up), dinormalisasi
+    const lxr: V3 = [
+      ly[1]*up[2] - ly[2]*up[1],
+      ly[2]*up[0] - ly[0]*up[2],
+      ly[0]*up[1] - ly[1]*up[0],
+    ];
+    const lxl = Math.hypot(lxr[0], lxr[1], lxr[2]) || 1;
+    const lx: V3 = [lxr[0]/lxl, lxr[1]/lxl, lxr[2]/lxl];
+    // Sumbu-Z lokal = cross(lx, ly)
+    const lz: V3 = [
+      lx[1]*ly[2] - lx[2]*ly[1],
+      lx[2]*ly[0] - lx[0]*ly[2],
+      lx[0]*ly[1] - lx[1]*ly[0],
+    ];
+    const mx = (a[0]+b[0])/2, my = (a[1]+b[1])/2, mz = (a[2]+b[2])/2;
+    draw('cyl', mul(mul(T(mx,my,mz), mkRot(lx,ly,lz)), S(r*2, len, r*2)), col);
+  }
+
+  /** Kabel catenary 3D: rangkaian silinder terorientasi yang melengkung */
   function cable(a: V3, b: V3, sag: number, col: V3, n = 16) {
-    for (let i = 0; i <= n; i++) {
-      const t = i/n;
-      const x = a[0] + (b[0]-a[0])*t;
-      const z = a[2] + (b[2]-a[2])*t;
-      const y = a[1] + (b[1]-a[1])*t - Math.sin(Math.PI*t)*sag;
-      draw('cube', mul(T(x,y,z), S(0.016,0.016,0.016)), col);
+    const r = 0.006; // radius kabel
+    let prev: V3 = a;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n;
+      const x = a[0] + (b[0]-a[0]) * t;
+      const z = a[2] + (b[2]-a[2]) * t;
+      const y = a[1] + (b[1]-a[1]) * t - Math.sin(Math.PI * t) * sag;
+      const cur: V3 = [x, y, z];
+      cableSegment(prev, cur, r, col);
+      prev = cur;
     }
   }
 
@@ -462,14 +504,19 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
         }
       }
 
-      // garis ukur objek terpilih
+      // garis ukur objek terpilih — ujung atas garis = permukaan objek
       if (w.selectedId) {
         const s = w.furniture.find(i => i.id === w.selectedId);
         if (s) {
-          const y = s.position.y, x = s.position.x + 0.42, z = s.position.z;
-          draw('cube', mul(T(x, y/2, z), S(0.006, y, 0.006)), [0.98,0.82,0.20], 0.85);
-          draw('cube', mul(T(x, y, z), S(0.09, 0.007, 0.007)), [0.98,0.82,0.20], 0.85);
-          draw('cube', mul(T(x, 0.006, z), S(0.09, 0.007, 0.007)), [0.98,0.82,0.20], 0.85);
+          // Untuk kursi & meja: ukur sampai permukaan atas (position.y adalah pusat geometri)
+          // Untuk monitor: ukur sampai pusat layar (position.y sudah merupakan titik tengah)
+          const topY = (s.type === 'chair' || s.type === 'desk')
+            ? s.position.y + s.scale.y / 2
+            : s.position.y;
+          const x = s.position.x + 0.42, z = s.position.z;
+          draw('cube', mul(T(x, topY / 2, z), S(0.006, topY, 0.006)), [0.98, 0.82, 0.20], 0.85);
+          draw('cube', mul(T(x, topY, z), S(0.09, 0.007, 0.007)), [0.98, 0.82, 0.20], 0.85);
+          draw('cube', mul(T(x, 0.006, z), S(0.09, 0.007, 0.007)), [0.98, 0.82, 0.20], 0.85);
         }
       }
     },

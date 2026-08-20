@@ -362,11 +362,12 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
         w.camX = clamp(w.camX, -3.6, 3.6); w.camZ = clamp(w.camZ, -3.4, 3.6);
       }
 
-      // duduk: kamera menuju kursi, tinggi mata = dudukan + 72 cm
+      // duduk: kamera menuju kursi, tinggi mata = permukaan dudukan + 72 cm
       const chair = w.furniture.find(f => f.type === 'chair')!;
       w.sitT += ((w.sitting ? 1 : 0) - w.sitT) * Math.min(1, dt * 6);
       const tX = chair.position.x, tZ = chair.position.z + 0.04;
-      const eyeSit = chair.position.y + 0.72;
+      const chairSeatSurf = chair.position.y + chair.scale.y / 2;  // permukaan dudukan
+      const eyeSit = chairSeatSurf + 0.72;  // tinggi mata saat duduk = dudukan + torso ~72 cm
       w.camY += ((w.sitting ? eyeSit : 1.65) - w.camY) * Math.min(1, dt * 6);
       if (w.sitT > 0.01) {
         w.camX += (tX - w.camX) * Math.min(1, dt * 5 * w.sitT);

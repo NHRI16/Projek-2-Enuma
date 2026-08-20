@@ -26,6 +26,8 @@ function grade(actual: number, ideal: number, perfect: number, max: number): num
 
 export const deskSurfaceY = (desk: FurnitureItem) => desk.position.y + desk.scale.y / 2;
 export const deskFrontZ = (desk: FurnitureItem) => desk.position.z + desk.scale.z / 2;
+/** Tinggi permukaan atas dudukan kursi (titik kontak paha) */
+export const chairSeatY = (chair: FurnitureItem) => chair.position.y + chair.scale.y / 2;
 
 /** Sudut (derajat) yang seharusnya dihadapi monitor agar menghadap kursi */
 function facingAngle(mon: FurnitureItem, chair: FurnitureItem): number {
@@ -58,11 +60,11 @@ export function getMetric(item: FurnitureItem, all: FurnitureItem[]): Metric {
 
   switch (item.type) {
     case 'chair':
-      return { label: 'Tinggi dudukan', current: item.position.y * 100, target: IDEAL.chairSeat * 100, unit: 'cm', barMin: 32, barMax: 58, tol: 3, control: 'height' };
+      return { label: 'Tinggi dudukan', current: chairSeatY(item) * 100, target: IDEAL.chairSeat * 100, unit: 'cm', barMin: 32, barMax: 58, tol: 3, control: 'height' };
     case 'desk':
       return { label: 'Tinggi permukaan meja', current: deskSurfaceY(item) * 100, target: IDEAL.deskSurface * 100, unit: 'cm', barMin: 62, barMax: 88, tol: 3, control: 'height' };
     case 'monitor': {
-      const idealY = chair.position.y + IDEAL.monitorEyeOffset;
+      const idealY = chairSeatY(chair) + IDEAL.monitorEyeOffset;
       // Bila tinggi sudah pas, fokus beralih ke jarak monitor
       if (Math.abs(item.position.y - idealY) <= 0.045) {
         const d = Math.hypot(item.position.x - chair.position.x, item.position.z - chair.position.z) * 100;
@@ -99,8 +101,9 @@ export function getItemScore(item: FurnitureItem, all: FurnitureItem[]): ItemSco
 
   switch (item.type) {
     case 'chair': {
-      const s = grade(item.position.y, IDEAL.chairSeat, 0.025, 0.14);
-      const d = Math.round((IDEAL.chairSeat - item.position.y) * 100);
+      const seat = chairSeatY(item);
+      const s = grade(seat, IDEAL.chairSeat, 0.025, 0.14);
+      const d = Math.round((IDEAL.chairSeat - seat) * 100);
       return { score: s, status: stat(s), hint: s >= 80 ? 'Tinggi kursi pas — paha horizontal, kaki rata di lantai.' : d > 0 ? `Naikkan kursi ${d} cm lagi.` : `Turunkan kursi ${-d} cm lagi.` };
     }
     case 'desk': {
@@ -110,7 +113,7 @@ export function getItemScore(item: FurnitureItem, all: FurnitureItem[]): ItemSco
       return { score: s, status: stat(s), hint: s >= 80 ? 'Tinggi meja pas — sejajar siku saat duduk.' : d > 0 ? `Naikkan meja ${d} cm lagi.` : `Turunkan meja ${-d} cm lagi.` };
     }
     case 'monitor': {
-      const idealY = chair.position.y + IDEAL.monitorEyeOffset;
+      const idealY = chairSeatY(chair) + IDEAL.monitorEyeOffset;
       const hS = grade(item.position.y, idealY, 0.04, 0.22);
       const dist = Math.hypot(item.position.x - chair.position.x, item.position.z - chair.position.z);
       const dS = grade(dist, IDEAL.monitorDist, 0.08, 0.35);
@@ -171,9 +174,10 @@ export function getSteps(all: FurnitureItem[]): ErgoStep[] {
   const mouse = all.find(i => i.type === 'mouse')!;
   const lamp = all.find(i => i.type === 'lamp')!;
 
-  const chairS = grade(chair.position.y, IDEAL.chairSeat, 0.025, 0.14);
+  const chairSeat = chairSeatY(chair);
+  const chairS = grade(chairSeat, IDEAL.chairSeat, 0.025, 0.14);
   const deskS = grade(deskSurfaceY(desk), IDEAL.deskSurface, 0.025, 0.14);
-  const monHS = grade(mon.position.y, chair.position.y + IDEAL.monitorEyeOffset, 0.04, 0.22);
+  const monHS = grade(mon.position.y, chairSeat + IDEAL.monitorEyeOffset, 0.04, 0.22);
   const monDist = Math.hypot(mon.position.x - chair.position.x, mon.position.z - chair.position.z);
   const monDS = Math.round(
     grade(monDist, IDEAL.monitorDist, 0.08, 0.35) * 0.65 +
@@ -211,14 +215,15 @@ export function calculateErgonomicScore(items: FurnitureItem[]): ErgonomicScore 
   const kbS = getItemScore(kb, items);
   const mouseS = getItemScore(mouse, items);
 
-  const monHeight = grade(mon.position.y, chair.position.y + IDEAL.monitorEyeOffset, 0.04, 0.22);
+  const cSeat = chairSeatY(chair);
+  const monHeight = grade(mon.position.y, cSeat + IDEAL.monitorEyeOffset, 0.04, 0.22);
   const monDist = grade(Math.hypot(mon.position.x - chair.position.x, mon.position.z - chair.position.z), IDEAL.monitorDist, 0.08, 0.35);
   const monFacing = grade(angleDiff(mon.rotation.y, facingAngle(mon, chair)), 0, 8, 45);
-  const elbow = grade(deskSurfaceY(desk) - chair.position.y, IDEAL.elbowGap, 0.03, 0.16);
+  const elbow = grade(deskSurfaceY(desk) - cSeat, IDEAL.elbowGap, 0.03, 0.16);
 
   const feedback: string[] = [];
   if (elbow < 80) {
-    const gap = deskSurfaceY(desk) - chair.position.y;
+    const gap = deskSurfaceY(desk) - cSeat;
     feedback.push(gap > IDEAL.elbowGap
       ? 'Selisih meja–kursi terlalu besar: bahu terangkat saat mengetik. Naikkan kursi atau turunkan meja.'
       : 'Selisih meja–kursi terlalu kecil: paha terhimpit meja. Turunkan kursi atau naikkan meja.');
@@ -267,5 +272,7 @@ export function normalizeDeskItems(items: FurnitureItem[]): FurnitureItem[] {
       it.position.y = clamp(it.position.y, minY, it.maxHeight);
     }
   }
+  // Selaraskan minHeight/maxHeight kursi agar selalu merujuk ke pusat geometri
+  // (tidak perlu perubahan: minHeight/maxHeight sudah dalam satuan position.y)
   return items;
 }

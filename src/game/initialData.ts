@@ -23,15 +23,15 @@ export const initialFurniture: FurnitureItem[] = [
     id: 'chair',
     name: 'Kursi Kerja',
     type: 'chair',
-    position: { x: 0, y: 0.34, z: -0.78 },   // 34 cm → terlalu rendah
-    rotation: { x: 0, y: 0, z: 0 },
+    position: { x: 0, y: 0.34, z: -0.78 },   // pusat geometri 34 cm → permukaan dudukan 37 cm (terlalu rendah)
+    rotation: { x: 0, y: 180, z: 0 },          // menghadap meja (sandaran ke arah pemain)
     scale: { x: 0.48, y: 0.06, z: 0.48 },
     color: '#2B2D42',
     selected: false,
-    idealPosition: { x: 0, y: 0.45, z: -0.78 },
-    idealRotation: { x: 0, y: 0, z: 0 },
+    idealPosition: { x: 0, y: 0.42, z: -0.78 },  // pusat 42 cm → permukaan dudukan 45 cm (ergonomis)
+    idealRotation: { x: 0, y: 180, z: 0 },
     tolerancePos: 0.05, toleranceRot: 10,
-    heightAdjustable: true, minHeight: 0.32, maxHeight: 0.60,
+    heightAdjustable: true, minHeight: 0.29, maxHeight: 0.55,  // pusat = permukaan - 0.03
     ergoTip: 'Kaki menapak rata, lutut 90°, paha horizontal (±45 cm).',
     ergoUnit: 'cm',
   },

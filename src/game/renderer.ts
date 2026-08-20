@@ -1,0 +1,477 @@
+import { FurnitureItem } from './types';
+import { deskSurfaceY } from './ergonomics';
+
+export interface RenderWorld {
+  camX: number; camY: number; camZ: number; yaw: number; pitch: number;
+  furniture: FurnitureItem[];
+  selectedId: string | null;
+  hoveredId: string | null;
+  darkMode: boolean;
+  showGuide: boolean;
+  interactionMode: boolean;
+}
+
+type V3 = [number, number, number];
+type MeshT = 'cube' | 'cyl';
+
+/* ── Matrix helpers (column-major) ── */
+const I = () => new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+const mul = (a: Float32Array, b: Float32Array) => {
+  const r = new Float32Array(16);
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++)
+    r[j*4+i] = a[i]*b[j*4] + a[4+i]*b[j*4+1] + a[8+i]*b[j*4+2] + a[12+i]*b[j*4+3];
+  return r;
+};
+const T = (x: number, y: number, z: number) => { const m = I(); m[12]=x; m[13]=y; m[14]=z; return m; };
+const S = (x: number, y: number, z: number) => { const m = I(); m[0]=x; m[5]=y; m[10]=z; return m; };
+const RY = (a: number) => { const c=Math.cos(a), s=Math.sin(a), m=I(); m[0]=c; m[2]=s; m[8]=-s; m[10]=c; return m; };
+const persp = (fov: number, asp: number, n: number, f: number) => {
+  const t = 1/Math.tan(fov/2), nf = 1/(n-f);
+  return new Float32Array([t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)*nf,-1, 0,0,2*f*n*nf,0]);
+};
+const lookDir = (ex: number, ey: number, ez: number, yaw: number, pitch: number) => {
+  const cp = Math.cos(pitch);
+  const fx = Math.sin(yaw)*cp, fy = Math.sin(pitch), fz = Math.cos(yaw)*cp;
+  const fl = Math.hypot(fx, fy, fz) || 1;
+  const fxn = fx/fl, fyn = fy/fl, fzn = fz/fl;
+  let rx = fyn*0 - fzn*1, ry = 0, rz = fxn*1 - 0;
+  const rl = Math.hypot(rx, ry, rz) || 1; rx/=rl; ry/=rl; rz/=rl;
+  const ux = ry*fzn - rz*fyn, uy = rz*fxn - rx*fzn, uz = rx*fyn - ry*fxn;
+  return new Float32Array([
+    rx, ux, -fxn, 0,
+    ry, uy, -fyn, 0,
+    rz, uz, -fzn, 0,
+    -(rx*ex+ry*ey+rz*ez), -(ux*ex+uy*ey+uz*ez), -(-fxn*ex + -fyn*ey + -fzn*ez), 1,
+  ]);
+};
+const nMat = (m: Float32Array) => new Float32Array([m[0],m[1],m[2], m[4],m[5],m[6], m[8],m[9],m[10]]);
+const hex = (h: string): V3 => { const v = parseInt(h.replace('#',''),16); return [(v>>16&255)/255,(v>>8&255)/255,(v&255)/255]; };
+const shade = (c: V3, f: number): V3 => [Math.min(1,c[0]*f), Math.min(1,c[1]*f), Math.min(1,c[2]*f)];
+
+/** Transformasi bagian anak: induk(posisi+rotasi) → offset lokal → skala.
+ *  Inilah kunci agar objek TIDAK terpotong / tercerai saat diputar. */
+const part = (px: number, py: number, pz: number, rot: number,
+              lx: number, ly: number, lz: number,
+              sx: number, sy: number, sz: number) =>
+  mul(mul(mul(T(px,py,pz), RY(rot)), T(lx,ly,lz)), S(sx,sy,sz));
+
+/* ── Rotation-aware AABB untuk seleksi ── */
+export function pickBox(it: FurnitureItem): { p: V3; h: V3 } {
+  const r = (it.rotation.y||0) * Math.PI/180;
+  const ac = Math.abs(Math.cos(r)), as = Math.abs(Math.sin(r));
+  let sx = it.scale.x, sy = it.scale.y, sz = it.scale.z;
+  let cy = it.position.y;
+  switch (it.type) {
+    case 'chair':    sy = 0.85; cy = it.position.y + 0.18; sx = it.scale.x + 0.12; sz = it.scale.z + 0.12; break;
+    case 'monitor':  sy = it.scale.y + 0.28; cy = it.position.y - 0.08; sz = 0.18; break;
+    case 'keyboard': sy = 0.07; sx += 0.06; sz += 0.06; break;
+    case 'mouse':    sy = 0.07; sx = 0.13; sz = 0.15; break;
+    case 'lamp':     sy = it.scale.y + 0.22; cy = it.position.y + 0.06; sx = 0.20; sz = 0.20; break;
+    case 'desk':     sy = it.scale.y + 0.04; break;
+  }
+  return { p: [it.position.x, cy, it.position.z], h: [(ac*sx + as*sz)/2, sy/2, (as*sx + ac*sz)/2] };
+}
+
+export function rayHit(o: V3, d: V3, p: V3, h: V3): number | null {
+  let tmin = -Infinity, tmax = Infinity;
+  for (let i = 0; i < 3; i++) {
+    const mn = p[i]-h[i], mx = p[i]+h[i];
+    if (Math.abs(d[i]) < 1e-8) { if (o[i] < mn || o[i] > mx) return null; continue; }
+    let t1 = (mn-o[i])/d[i], t2 = (mx-o[i])/d[i];
+    if (t1 > t2) [t1,t2] = [t2,t1];
+    tmin = Math.max(tmin,t1); tmax = Math.min(tmax,t2);
+  }
+  if (tmax < 0 || tmin > tmax) return null;
+  return tmin > 0 ? tmin : tmax;
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => RenderWorld) {
+  const gl = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as WebGLRenderingContext | null;
+  if (!gl) throw new Error('WebGL tidak didukung');
+
+  const vs = `attribute vec4 aPos; attribute vec3 aNorm;
+    uniform mat4 uMVP, uModel; uniform mat3 uNMat;
+    varying vec3 vN, vW;
+    void main(){ gl_Position=uMVP*aPos; vN=uNMat*aNorm; vW=(uModel*aPos).xyz; }`;
+  const fs = `precision mediump float;
+    varying vec3 vN, vW;
+    uniform vec3 uCol, uCam, uL1, uL2;
+    uniform float uSel, uHov, uTime, uGhost, uEmis;
+    void main(){
+      vec3 n = normalize(vN);
+      vec3 v = normalize(uCam - vW);
+      vec3 l1 = normalize(uL1 - vW);
+      vec3 l2 = normalize(uL2 - vW);
+      float d1 = max(dot(n,l1),0.0), d2 = max(dot(n,l2),0.0);
+      float sp = pow(max(dot(n, normalize(l1+v)),0.0), 40.0);
+      vec3 c = uCol*0.34 + uCol*d1*0.55 + uCol*d2*0.22 + vec3(0.22)*sp;
+      c = mix(c, uCol, uEmis);
+      if(uSel > 0.5){ c = mix(c, vec3(0.45,0.62,1.0), 0.28 + sin(uTime*4.0)*0.10); }
+      else if(uHov > 0.5){ c = mix(c, vec3(0.55,0.85,1.0), 0.16); }
+      if(uGhost > 0.5) c = vec3(0.25,0.95,0.55);
+      gl_FragColor = vec4(c, uGhost > 0.5 ? 0.30 : 1.0);
+    }`;
+  const sh = (t: number, src: string) => { const s = gl.createShader(t)!; gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const prog = gl.createProgram()!;
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+
+  const A = { pos: gl.getAttribLocation(prog,'aPos'), norm: gl.getAttribLocation(prog,'aNorm') };
+  const U = {
+    mvp: gl.getUniformLocation(prog,'uMVP'), model: gl.getUniformLocation(prog,'uModel'),
+    nmat: gl.getUniformLocation(prog,'uNMat'), col: gl.getUniformLocation(prog,'uCol'),
+    cam: gl.getUniformLocation(prog,'uCam'), l1: gl.getUniformLocation(prog,'uL1'),
+    l2: gl.getUniformLocation(prog,'uL2'), sel: gl.getUniformLocation(prog,'uSel'),
+    hov: gl.getUniformLocation(prog,'uHov'), time: gl.getUniformLocation(prog,'uTime'),
+    ghost: gl.getUniformLocation(prog,'uGhost'), emis: gl.getUniformLocation(prog,'uEmis'),
+  };
+
+  /* Geometry */
+  const cubeV = new Float32Array([
+    -.5,-.5,.5,0,0,1, .5,-.5,.5,0,0,1, .5,.5,.5,0,0,1, -.5,.5,.5,0,0,1,
+    .5,-.5,-.5,0,0,-1, -.5,-.5,-.5,0,0,-1, -.5,.5,-.5,0,0,-1, .5,.5,-.5,0,0,-1,
+    -.5,.5,.5,0,1,0, .5,.5,.5,0,1,0, .5,.5,-.5,0,1,0, -.5,.5,-.5,0,1,0,
+    -.5,-.5,-.5,0,-1,0, .5,-.5,-.5,0,-1,0, .5,-.5,.5,0,-1,0, -.5,-.5,.5,0,-1,0,
+    .5,-.5,.5,1,0,0, .5,-.5,-.5,1,0,0, .5,.5,-.5,1,0,0, .5,.5,.5,1,0,0,
+    -.5,-.5,-.5,-1,0,0, -.5,-.5,.5,-1,0,0, -.5,.5,.5,-1,0,0, -.5,.5,-.5,-1,0,0,
+  ]);
+  const cubeI = new Uint16Array([0,1,2,0,2,3,4,5,6,4,6,7,8,9,10,8,10,11,12,13,14,12,14,15,16,17,18,16,18,19,20,21,22,20,22,23]);
+  const mkBuf = (v: Float32Array, i: Uint16Array) => {
+    const vb = gl.createBuffer()!; gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, v, gl.STATIC_DRAW);
+    const ib = gl.createBuffer()!; gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, i, gl.STATIC_DRAW);
+    return { vb, ib, n: i.length };
+  };
+  const cube = mkBuf(cubeV, cubeI);
+
+  const seg = 20, cv: number[] = [], ci: number[] = [];
+  for (let i = 0; i <= seg; i++) { const a = i/seg*Math.PI*2, c = Math.cos(a), s = Math.sin(a);
+    cv.push(c*.5,-.5,s*.5,c,0,s, c*.5,.5,s*.5,c,0,s); }
+  for (let i = 0; i < seg; i++) { const b = i*2; ci.push(b,b+1,b+3,b,b+3,b+2); }
+  let base = cv.length/6; cv.push(0,.5,0,0,1,0);
+  for (let i = 0; i <= seg; i++) { const a = i/seg*Math.PI*2; cv.push(Math.cos(a)*.5,.5,Math.sin(a)*.5,0,1,0); }
+  for (let i = 0; i < seg; i++) ci.push(base, base+1+i, base+2+i);
+  base = cv.length/6; cv.push(0,-.5,0,0,-1,0);
+  for (let i = 0; i <= seg; i++) { const a = i/seg*Math.PI*2; cv.push(Math.cos(a)*.5,-.5,Math.sin(a)*.5,0,-1,0); }
+  for (let i = 0; i < seg; i++) ci.push(base, base+2+i, base+1+i);
+  const cyl = mkBuf(new Float32Array(cv), new Uint16Array(ci));
+
+  let vpM = I(); let camP: V3 = [0,0,0]; let now = 0;
+  let curSel = false, curHov = false, curGhost = false;
+  let deskSurf = 0.73;
+
+  function draw(t: MeshT, m: Float32Array, c: V3, emis = 0) {
+    const b = t === 'cube' ? cube : cyl;
+    gl!.bindBuffer(gl!.ARRAY_BUFFER, b.vb);
+    gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, b.ib);
+    gl!.enableVertexAttribArray(A.pos); gl!.vertexAttribPointer(A.pos,3,gl!.FLOAT,false,24,0);
+    gl!.enableVertexAttribArray(A.norm); gl!.vertexAttribPointer(A.norm,3,gl!.FLOAT,false,24,12);
+    gl!.uniformMatrix4fv(U.mvp,false,mul(vpM,m));
+    gl!.uniformMatrix4fv(U.model,false,m);
+    gl!.uniformMatrix3fv(U.nmat,false,nMat(m));
+    gl!.uniform3fv(U.col,c); gl!.uniform3fv(U.cam,camP);
+    gl!.uniform3f(U.l1,1.6,2.7,0.6); gl!.uniform3f(U.l2,-2.2,2.4,-2.0);
+    gl!.uniform1f(U.sel,curSel?1:0); gl!.uniform1f(U.hov,curHov?1:0);
+    gl!.uniform1f(U.time,now); gl!.uniform1f(U.ghost,curGhost?1:0);
+    gl!.uniform1f(U.emis,emis);
+    gl!.drawElements(gl!.TRIANGLES,b.n,gl!.UNSIGNED_SHORT,0);
+  }
+
+  /** Kabel: rangkaian manik-manik mengikuti kurva melengkung (sag) */
+  function cable(a: V3, b: V3, sag: number, col: V3, n = 16) {
+    for (let i = 0; i <= n; i++) {
+      const t = i/n;
+      const x = a[0] + (b[0]-a[0])*t;
+      const z = a[2] + (b[2]-a[2])*t;
+      const y = a[1] + (b[1]-a[1])*t - Math.sin(Math.PI*t)*sag;
+      draw('cube', mul(T(x,y,z), S(0.016,0.016,0.016)), col);
+    }
+  }
+
+  /* ── Objek furnitur (semua bagian mengikuti rotasi induk) ── */
+  function item(it: FurnitureItem, ghost = false) {
+    const p = it.position, sc = it.scale;
+    const r = (it.rotation.y||0) * Math.PI/180;
+    const c = ghost ? [0.25,0.95,0.55] as V3 : hex(it.color);
+    const P = (lx: number, ly: number, lz: number, sx: number, sy: number, sz: number) =>
+      part(p.x, p.y, p.z, r, lx, ly, lz, sx, sy, sz);
+
+    switch (it.type) {
+      case 'desk': {
+        draw('cube', P(0,0,0, sc.x, sc.y, sc.z), c);
+        draw('cube', P(0, -0.012, 0, sc.x*0.995, sc.y*0.4, sc.z*0.99), shade(c,1.12)); // lapisan tepi
+        const legH = p.y - sc.y/2, ox = sc.x/2-0.07, oz = sc.z/2-0.07;
+        const lc = shade(c, 0.55);
+        for (const [lx,lz] of [[-ox,-oz],[ox,-oz],[-ox,oz],[ox,oz]] as [number,number][])
+          draw('cube', P(lx, legH/2 - p.y, lz, 0.05, legH, 0.05), lc);
+        // palang penguat
+        draw('cube', P(0, 0.12 - p.y, -oz, sc.x-0.18, 0.03, 0.03), lc);
+        draw('cube', P(0, 0.12 - p.y, oz, sc.x-0.18, 0.03, 0.03), lc);
+        if (!ghost) { // panel belakang
+          draw('cube', P(0, -sc.y/2 - 0.16, -sc.z/2 + 0.03, sc.x-0.16, 0.28, 0.02), shade(c,0.8));
+        }
+        break;
+      }
+      case 'chair': {
+        draw('cube', P(0,0,0, sc.x, sc.y, sc.z), c);                              // dudukan
+        draw('cube', P(0, 0.035, 0, sc.x*0.92, 0.03, sc.z*0.92), shade(c,1.35));  // busa
+        const pedH = p.y - 0.06;
+        draw('cyl', P(0, pedH/2 - p.y + 0.03, 0, 0.07, pedH, 0.07), [0.32,0.33,0.38]);
+        for (let i = 0; i < 5; i++) {
+          const a = i/5*Math.PI*2;
+          draw('cyl', P(Math.cos(a)*0.21, 0.045 - p.y, Math.sin(a)*0.21, 0.05, 0.05, 0.05), [0.22,0.22,0.26]);
+          draw('cube', P(Math.cos(a)*0.11, 0.075 - p.y, Math.sin(a)*0.11, 0.20, 0.035, 0.05), [0.26,0.26,0.30]);
+        }
+        // sandaran
+        draw('cube', P(0, 0.30, -sc.z/2 + 0.03, sc.x*0.92, 0.46, 0.05), shade(c,1.25));
+        draw('cube', P(0, 0.16, -sc.z/2 + 0.05, 0.07, 0.16, 0.05), [0.25,0.25,0.30]);
+        // penyangga lumbar
+        draw('cube', P(0, 0.20, -sc.z/2 + 0.08, sc.x*0.7, 0.09, 0.03), shade(c,1.6));
+        for (const s of [-1,1]) {
+          draw('cube', P(s*(sc.x/2+0.01), 0.15, 0.02, 0.05, 0.04, sc.z*0.62), [0.18,0.18,0.22]);
+          draw('cube', P(s*(sc.x/2+0.01), 0.08, -0.06, 0.035, 0.14, 0.035), [0.22,0.22,0.26]);
+        }
+        break;
+      }
+      case 'monitor': {
+        draw('cube', P(0,0,0, sc.x, sc.y, sc.z), c);
+        draw('cube', P(0, 0, sc.z/2 + 0.004, sc.x-0.035, sc.y-0.035, 0.006), ghost ? c : [0.16,0.30,0.52], ghost?0:0.55);
+        if (!ghost) { // "konten" layar
+          for (let i = 0; i < 3; i++)
+            draw('cube', P(-sc.x/2 + 0.09 + i*0.02, sc.y/2 - 0.06 - i*0.055, sc.z/2 + 0.008, sc.x*0.55 - i*0.06, 0.016, 0.003), [0.55,0.72,0.95], 0.7);
+        }
+        draw('cube', P(0, -sc.y/2 - 0.075, 0, 0.05, 0.15, 0.045), [0.28,0.28,0.32]);
+        draw('cube', P(0, -sc.y/2 - 0.155, 0.02, 0.24, 0.018, 0.15), [0.26,0.26,0.30]);
+        // Penyangga (riser/tumpukan buku) mengisi celah bila monitor dinaikkan
+        if (!ghost) {
+          const standBottom = p.y - sc.y/2 - 0.164;
+          const gap = standBottom - deskSurf;
+          if (gap > 0.012) {
+            const n = Math.max(1, Math.round(gap / 0.045));
+            const hEach = gap / n;
+            for (let i = 0; i < n; i++) {
+              const cy = deskSurf + hEach * (i + 0.5) - p.y;
+              const tone: V3 = [[0.62,0.30,0.26],[0.24,0.40,0.30],[0.28,0.34,0.52],[0.58,0.46,0.22]][i % 4] as V3;
+              draw('cube', P(0, cy, 0.02, 0.30 - (i % 2) * 0.02, hEach * 0.86, 0.20 - (i % 2) * 0.015), tone);
+            }
+          }
+        }
+        break;
+      }
+      case 'keyboard': {
+        draw('cube', P(0,0,0, sc.x, sc.y, sc.z), c);
+        if (!ghost) {
+          for (let row = 0; row < 4; row++) for (let col = 0; col < 13; col++) {
+            const lx = -sc.x/2 + 0.028 + col*0.0315;
+            const lz = -sc.z/2 + 0.026 + row*0.026;
+            draw('cube', P(lx, sc.y/2 + 0.004, lz, 0.026, 0.006, 0.020), [0.36,0.36,0.40]);
+          }
+          draw('cube', P(0, sc.y/2 + 0.004, sc.z/2 - 0.024, 0.17, 0.006, 0.022), [0.36,0.36,0.40]);
+          draw('cube', P(-sc.x/2+0.03, sc.y/2+0.006, -sc.z/2+0.026, 0.008, 0.002, 0.006), [0.3,0.9,0.4], 0.8);
+        }
+        break;
+      }
+      case 'mouse': {
+        draw('cyl', P(0, 0, 0, sc.x, sc.y, sc.z), c);
+        draw('cyl', P(0, sc.y/2 + 0.005, 0.006, sc.x*0.9, 0.012, sc.z*0.86), shade(c,1.5));
+        if (!ghost) {
+          draw('cube', P(0, sc.y/2 + 0.013, -0.022, 0.007, 0.007, 0.016), [0.45,0.45,0.5]);
+          draw('cube', P(0, sc.y/2 + 0.012, -0.032, 0.0025, 0.006, 0.030), [0.30,0.30,0.34]);
+        }
+        break;
+      }
+      case 'lamp': {
+        draw('cyl', P(0, -sc.y/2 - 0.008, 0, 0.13, 0.018, 0.13), [0.30,0.31,0.35]);
+        draw('cyl', P(0, 0, 0, 0.022, sc.y, 0.022), [0.42,0.43,0.47]);
+        draw('cyl', P(0.055, sc.y/2 + 0.005, 0, 0.14, 0.022, 0.022), [0.42,0.43,0.47]); // lengan
+        draw('cyl', P(0.115, sc.y/2 - 0.035, 0, 0.13, 0.085, 0.13), c);                 // kap
+        if (!ghost) draw('cyl', P(0.115, sc.y/2 - 0.075, 0, 0.075, 0.015, 0.075), [1,0.96,0.78], 0.95);
+        break;
+      }
+    }
+  }
+
+  /* ── Ruangan ── */
+  function room(dark: boolean) {
+    const wall: V3 = dark ? [0.20,0.21,0.26] : [0.86,0.84,0.80];
+    const wall2: V3 = dark ? [0.17,0.18,0.23] : [0.82,0.80,0.77];
+    const floor: V3 = dark ? [0.16,0.16,0.19] : [0.42,0.36,0.31];
+
+    draw('cube', mul(T(0,-0.01,0), S(10,0.02,10)), floor);
+    for (let x = -4; x <= 4; x++) draw('cube', mul(T(x,0.002,0), S(0.012,0.004,10)), shade(floor,0.82));
+    for (let z = -4; z <= 4; z++) draw('cube', mul(T(0,0.002,z), S(10,0.004,0.012)), shade(floor,0.82));
+
+    draw('cube', mul(T(0,1.5,-4), S(10,3,0.1)), wall);
+    draw('cube', mul(T(-4,1.5,0), S(0.1,3,10)), wall2);
+    draw('cube', mul(T(4,1.5,0), S(0.1,3,10)), wall2);
+    draw('cube', mul(T(0,3.0,0), S(10,0.06,10)), dark ? [0.14,0.15,0.19] : [0.93,0.92,0.90]);
+    // skirting
+    draw('cube', mul(T(0,0.05,-3.94), S(10,0.1,0.03)), shade(wall,0.75));
+
+    // jendela
+    draw('cube', mul(T(2.1,1.75,-3.95), S(1.5,1.05,0.02)), dark ? [0.12,0.16,0.28] : [0.62,0.79,0.94], dark?0.3:0.65);
+    draw('cube', mul(T(2.1,1.75,-3.93), S(1.6,1.15,0.02)), [0.95,0.95,0.96]);
+    draw('cube', mul(T(2.1,1.75,-3.96), S(0.03,1.05,0.01)), [0.9,0.9,0.92]);
+    draw('cube', mul(T(2.1,1.75,-3.96), S(1.5,0.03,0.01)), [0.9,0.9,0.92]);
+
+    // lampu plafon
+    draw('cube', mul(T(0,2.93,-1.2), S(1.1,0.06,0.28)), [1,0.98,0.92], 0.9);
+    draw('cube', mul(T(0,2.97,-1.2), S(1.2,0.04,0.34)), [0.8,0.8,0.84]);
+
+    // stopkontak dinding
+    draw('cube', mul(T(1.15,0.28,-3.93), S(0.11,0.14,0.02)), [0.92,0.92,0.90]);
+    draw('cube', mul(T(1.15,0.28,-3.92), S(0.05,0.06,0.01)), [0.35,0.35,0.38]);
+
+    // rak buku
+    draw('cube', mul(T(-3.86,1.15,-2), S(0.06,1.9,0.75)), [0.42,0.28,0.19]);
+    for (let s = 0; s < 4; s++) {
+      draw('cube', mul(T(-3.72,0.45+s*0.44,-2), S(0.26,0.025,0.75)), [0.50,0.34,0.22]);
+      for (let b = 0; b < 5; b++) {
+        const bc: V3 = [[0.68,0.24,0.22],[0.22,0.46,0.30],[0.24,0.32,0.62],[0.72,0.56,0.20],[0.45,0.28,0.55]][b] as V3;
+        draw('cube', mul(T(-3.70,0.55+s*0.44,-2.28+b*0.13), S(0.14,0.18,0.055)), bc);
+      }
+    }
+    // poster ergonomi
+    draw('cube', mul(T(-1.6,1.75,-3.93), S(0.9,0.66,0.02)), [0.96,0.96,0.94]);
+    draw('cube', mul(T(-1.6,1.75,-3.92), S(0.96,0.72,0.01)), [0.25,0.28,0.35]);
+    draw('cube', mul(T(-1.6,1.95,-3.915), S(0.7,0.06,0.005)), [0.30,0.55,0.85], 0.6);
+    for (let i = 0; i < 3; i++) draw('cube', mul(T(-1.85+i*0.25,1.68,-3.915), S(0.16,0.22,0.005)), [0.55,0.70,0.85], 0.4);
+
+    // tanaman
+    draw('cyl', mul(T(3.4,0.16,-3.4), S(0.30,0.32,0.30)), [0.55,0.33,0.22]);
+    draw('cyl', mul(T(3.4,0.33,-3.4), S(0.31,0.04,0.31)), [0.30,0.22,0.16]);
+    for (let i = 0; i < 7; i++) {
+      const a = i/7*Math.PI*2;
+      draw('cube', mul(mul(T(3.4+Math.cos(a)*0.13, 0.52+((i%3)*0.09), -3.4+Math.sin(a)*0.13), RY(a)), S(0.10,0.34,0.05)), [0.20,0.55+((i%3)*0.06),0.24]);
+    }
+    // karpet
+    draw('cube', mul(T(0,0.006,-1.1), S(2.6,0.012,2.0)), dark ? [0.22,0.24,0.30] : [0.55,0.58,0.66]);
+    draw('cube', mul(T(0,0.010,-1.1), S(2.4,0.012,1.8)), dark ? [0.25,0.27,0.34] : [0.62,0.65,0.72]);
+  }
+
+  /* ── PC + kabel (mengikuti posisi objek secara dinamis) ── */
+  function desktopSetup(f: FurnitureItem[]) {
+    const desk = f.find(i => i.type === 'desk')!;
+    const mon = f.find(i => i.type === 'monitor')!;
+    const kb = f.find(i => i.type === 'keyboard')!;
+    const ms = f.find(i => i.type === 'mouse')!;
+    const surf = deskSurfaceY(desk);
+
+    // CPU di bawah meja
+    const pc: V3 = [desk.position.x + desk.scale.x/2 - 0.22, 0.23, desk.position.z - 0.12];
+    draw('cube', mul(T(pc[0],pc[1],pc[2]), S(0.20,0.46,0.44)), [0.14,0.15,0.18]);
+    draw('cube', mul(T(pc[0]+0.101,pc[1]+0.08,pc[2]), S(0.006,0.22,0.30)), [0.20,0.55,0.95], 0.75);
+    draw('cube', mul(T(pc[0]+0.101,pc[1]+0.19,pc[2]+0.14), S(0.008,0.012,0.012)), [0.35,0.95,0.45], 0.9);
+    draw('cyl', mul(T(pc[0]+0.101,pc[1]-0.10,pc[2]-0.10), S(0.10,0.008,0.10)), [0.25,0.26,0.30]);
+
+    // mousepad mengikuti mouse
+    draw('cube', mul(mul(T(ms.position.x, surf + 0.002, ms.position.z), RY((ms.rotation.y||0)*Math.PI/180)), S(0.24,0.004,0.20)), [0.16,0.17,0.21]);
+
+    const cc: V3 = [0.10,0.10,0.12];
+    const pcTop: V3 = [pc[0], pc[1]+0.20, pc[2]-0.20];
+    // kabel monitor → belakang meja → CPU
+    const monBase: V3 = [mon.position.x, mon.position.y - mon.scale.y/2 - 0.16, mon.position.z + 0.02];
+    const deskBack: V3 = [mon.position.x, surf - 0.02, desk.position.z - desk.scale.z/2 + 0.04];
+    cable(monBase, deskBack, 0.02, cc, 8);
+    cable(deskBack, pcTop, 0.10, cc, 18);
+    // kabel keyboard → CPU
+    cable([kb.position.x, kb.position.y, kb.position.z - kb.scale.z/2], [deskBack[0]-0.06, deskBack[1], deskBack[2]], 0.05, cc, 16);
+    // kabel mouse → CPU
+    cable([ms.position.x, ms.position.y, ms.position.z - ms.scale.z/2], [deskBack[0]+0.06, deskBack[1], deskBack[2]], 0.05, cc, 16);
+    // kabel listrik CPU → stopkontak
+    cable([pc[0]-0.10, pc[1]-0.16, pc[2]-0.18], [1.15, 0.24, -3.90], 0.06, [0.09,0.09,0.11], 20);
+    // kabel lampu → stopkontak
+    const lamp = f.find(i => i.type === 'lamp')!;
+    cable([lamp.position.x, surf + 0.01, lamp.position.z], [1.15, 0.24, -3.90], 0.12, [0.55,0.45,0.30], 22);
+  }
+
+  /* ── Penggaris tinggi pada dinding ── */
+  function ruler() {
+    for (let h = 0; h <= 18; h++) {
+      const y = h*0.1;
+      const major = h % 5 === 0;
+      draw('cube', mul(T(-3.94, y, -0.6), S(0.02, major?0.012:0.005, major?0.22:0.12)), major ? [0.95,0.75,0.25] : [0.62,0.62,0.66]);
+    }
+  }
+
+  return {
+    resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    },
+
+    pick(): string | null {
+      const w = getWorld();
+      const cp = Math.cos(w.pitch);
+      const d: V3 = [Math.sin(w.yaw)*cp, Math.sin(w.pitch), Math.cos(w.yaw)*cp];
+      const o: V3 = [w.camX, w.camY, w.camZ];
+      let best = Infinity, id: string | null = null;
+      for (const it of w.furniture) {
+        const b = pickBox(it);
+        const t = rayHit(o, d, b.p, b.h);
+        if (t !== null && t > 0.15 && t < 4.5 && t < best) { best = t; id = it.id; }
+      }
+      return id;
+    },
+
+    frame(time: number) {
+      const w = getWorld();
+      now = time;
+      gl.enable(gl.DEPTH_TEST);
+      gl.enable(gl.CULL_FACE);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      const d = w.darkMode;
+      gl.clearColor(d?0.05:0.55, d?0.06:0.68, d?0.09:0.82, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.useProgram(prog);
+
+      vpM = mul(persp(68*Math.PI/180, canvas.width/canvas.height, 0.04, 60), lookDir(w.camX,w.camY,w.camZ,w.yaw,w.pitch));
+      camP = [w.camX, w.camY, w.camZ];
+      curSel = false; curHov = false; curGhost = false;
+
+      const deskItem = w.furniture.find(i => i.type === 'desk');
+      if (deskItem) deskSurf = deskSurfaceY(deskItem);
+
+      room(d);
+      ruler();
+      desktopSetup(w.furniture);
+
+      for (const it of w.furniture) {
+        curSel = it.id === w.selectedId;
+        curHov = it.id === w.hoveredId && !curSel;
+        item(it);
+      }
+      curSel = false; curHov = false;
+
+      // panduan hantu posisi ideal
+      if (w.showGuide && w.selectedId) {
+        const sel = w.furniture.find(i => i.id === w.selectedId);
+        if (sel) {
+          const g: FurnitureItem = { ...sel, position: { ...sel.idealPosition }, rotation: { ...sel.idealRotation } };
+          curGhost = true;
+          gl.depthMask(false);
+          item(g, true);
+          gl.depthMask(true);
+          curGhost = false;
+        }
+      }
+
+      // garis ukur objek terpilih
+      if (w.selectedId) {
+        const s = w.furniture.find(i => i.id === w.selectedId);
+        if (s) {
+          const y = s.position.y, x = s.position.x + 0.42, z = s.position.z;
+          draw('cube', mul(T(x, y/2, z), S(0.006, y, 0.006)), [0.98,0.82,0.20], 0.85);
+          draw('cube', mul(T(x, y, z), S(0.09, 0.007, 0.007)), [0.98,0.82,0.20], 0.85);
+          draw('cube', mul(T(x, 0.006, z), S(0.09, 0.007, 0.007)), [0.98,0.82,0.20], 0.85);
+        }
+      }
+    },
+  };
+}

@@ -107,6 +107,7 @@ export const defaultSettings: GameSettings = {
   volume: 70,
   darkMode: false,
   graphicsQuality: 'high',
+  device: 'desktop',
 };
 
 export const initialGameState: GameState = {

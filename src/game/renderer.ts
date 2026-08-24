@@ -6,6 +6,7 @@ export interface RenderWorld {
   furniture: FurnitureItem[];
   selectedId: string | null;
   hoveredId: string | null;
+  heldId: string | null;
   darkMode: boolean;
   showGuide: boolean;
   interactionMode: boolean;
@@ -92,6 +93,13 @@ export function rayHit(o: V3, d: V3, p: V3, h: V3): number | null {
   return tmin > 0 ? tmin : tmax;
 }
 
+export function raycastPlane(o: V3, d: V3, yPlane: number): V3 | null {
+  if (Math.abs(d[1]) < 1e-6) return null; // Arah paralel dengan bidang
+  const t = (yPlane - o[1]) / d[1];
+  if (t < 0) return null; // Titik potong ada di belakang kamera
+  return [o[0] + d[0] * t, yPlane, o[2] + d[2] * t];
+}
+
 /* ═══════════════════════════════════════════════════════════ */
 export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => RenderWorld) {
   const gl = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as WebGLRenderingContext | null;
@@ -104,7 +112,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
   const fs = `precision mediump float;
     varying vec3 vN, vW;
     uniform vec3 uCol, uCam, uL1, uL2;
-    uniform float uSel, uHov, uTime, uGhost, uEmis;
+    uniform float uSel, uHov, uTime, uGhost, uEmis, uHeld;
     void main(){
       vec3 n = normalize(vN);
       vec3 v = normalize(uCam - vW);
@@ -114,10 +122,11 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
       float sp = pow(max(dot(n, normalize(l1+v)),0.0), 40.0);
       vec3 c = uCol*0.34 + uCol*d1*0.55 + uCol*d2*0.22 + vec3(0.22)*sp;
       c = mix(c, uCol, uEmis);
-      if(uSel > 0.5){ c = mix(c, vec3(0.45,0.62,1.0), 0.28 + sin(uTime*4.0)*0.10); }
+      if(uHeld > 0.5){ c = mix(c, vec3(0.1, 0.9, 0.3), 0.4 + sin(uTime*6.0)*0.15); }
+      else if(uSel > 0.5){ c = mix(c, vec3(0.45,0.62,1.0), 0.28 + sin(uTime*4.0)*0.10); }
       else if(uHov > 0.5){ c = mix(c, vec3(0.55,0.85,1.0), 0.16); }
       if(uGhost > 0.5) c = vec3(0.25,0.95,0.55);
-      gl_FragColor = vec4(c, uGhost > 0.5 ? 0.30 : 1.0);
+      gl_FragColor = vec4(c, uGhost > 0.5 ? 0.30 : (uHeld > 0.5 ? 0.85 : 1.0));
     }`;
   const sh = (t: number, src: string) => { const s = gl.createShader(t)!; gl.shaderSource(s, src); gl.compileShader(s); return s; };
   const prog = gl.createProgram()!;
@@ -133,6 +142,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     l2: gl.getUniformLocation(prog,'uL2'), sel: gl.getUniformLocation(prog,'uSel'),
     hov: gl.getUniformLocation(prog,'uHov'), time: gl.getUniformLocation(prog,'uTime'),
     ghost: gl.getUniformLocation(prog,'uGhost'), emis: gl.getUniformLocation(prog,'uEmis'),
+    held: gl.getUniformLocation(prog,'uHeld'),
   };
 
   /* Geometry */
@@ -165,7 +175,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
   const cyl = mkBuf(new Float32Array(cv), new Uint16Array(ci));
 
   let vpM = I(); let camP: V3 = [0,0,0]; let now = 0;
-  let curSel = false, curHov = false, curGhost = false;
+  let curSel = false, curHov = false, curGhost = false, curHeld = false;
   let deskSurf = 0.73;
 
   function draw(t: MeshT, m: Float32Array, c: V3, emis = 0) {
@@ -181,7 +191,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     gl!.uniform3f(U.l1,1.6,2.7,0.6); gl!.uniform3f(U.l2,-2.2,2.4,-2.0);
     gl!.uniform1f(U.sel,curSel?1:0); gl!.uniform1f(U.hov,curHov?1:0);
     gl!.uniform1f(U.time,now); gl!.uniform1f(U.ghost,curGhost?1:0);
-    gl!.uniform1f(U.emis,emis);
+    gl!.uniform1f(U.emis,emis); gl!.uniform1f(U.held,curHeld?1:0);
     gl!.drawElements(gl!.TRIANGLES,b.n,gl!.UNSIGNED_SHORT,0);
   }
 
@@ -478,7 +488,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
 
       vpM = mul(persp(68*Math.PI/180, canvas.width/canvas.height, 0.04, 60), lookDir(w.camX,w.camY,w.camZ,w.yaw,w.pitch));
       camP = [w.camX, w.camY, w.camZ];
-      curSel = false; curHov = false; curGhost = false;
+      curSel = false; curHov = false; curGhost = false; curHeld = false;
 
       const deskItem = w.furniture.find(i => i.type === 'desk');
       if (deskItem) deskSurf = deskSurfaceY(deskItem);
@@ -490,9 +500,10 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
       for (const it of w.furniture) {
         curSel = it.id === w.selectedId;
         curHov = it.id === w.hoveredId && !curSel;
+        curHeld = it.id === w.heldId;
         item(it);
       }
-      curSel = false; curHov = false;
+      curSel = false; curHov = false; curHeld = false;
 
       // panduan hantu posisi ideal
       if (w.showGuide && w.selectedId) {

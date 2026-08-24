@@ -3,9 +3,9 @@ import { GameState, FurnitureItem, GameSettings, ErgonomicScore } from './game/t
 import { initialFurniture, initialGameState } from './game/initialData';
 import {
   calculateErgonomicScore, getItemScore, getMetric, getSteps,
-  normalizeDeskItems, ErgoStep,
+  normalizeDeskItems, ErgoStep, deskSurfaceY,
 } from './game/ergonomics';
-import { createRenderer, RenderWorld } from './game/renderer';
+import { createRenderer, RenderWorld, raycastPlane } from './game/renderer';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const deepCopy = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
@@ -54,6 +54,12 @@ function Menu({ onStart, settings, upd }: { onStart: () => void; settings: GameS
         <div className="flex flex-col items-center gap-3">
           <button onClick={onStart} className="w-72 py-4 rounded-2xl text-white font-bold text-lg hover:scale-[1.03] active:scale-95 transition"
             style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 14px 40px -10px rgba(99,102,241,.8)' }}>▶  Mulai Simulasi</button>
+          
+          <div className="flex bg-slate-800/50 rounded-xl p-1 w-72 border border-slate-700/50">
+            <button onClick={() => upd({ device: 'desktop' })} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${settings.device === 'desktop' ? 'bg-indigo-500/30 text-indigo-200 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>💻 Desktop</button>
+            <button onClick={() => upd({ device: 'mobile' })} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${settings.device === 'mobile' ? 'bg-indigo-500/30 text-indigo-200 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>📱 Mobile</button>
+          </div>
+
           <button onClick={() => setModal('set')} className="w-72 py-3 rounded-2xl text-indigo-200 font-semibold border border-indigo-400/25 hover:bg-indigo-500/15 transition">⚙️  Pengaturan</button>
           <button onClick={() => setModal('about')} className="w-72 py-3 rounded-2xl text-indigo-200 font-semibold border border-indigo-400/25 hover:bg-indigo-500/15 transition">📖  Panduan Ergonomi</button>
         </div>
@@ -129,12 +135,13 @@ function Slider({ label, v, on }: { label: string; v: number; on: (n: number) =>
 /* ═══════════════════════ TUTORIAL ═══════════════════════ */
 function Tutorial({ onDone }: { onDone: () => void }) {
   const [i, setI] = useState(0);
+  const isMobile = initialGameState.settings.device === 'mobile';
   const steps = [
-    { ic: '🎮', t: 'Jelajahi Ruangan', d: 'Gunakan W A S D untuk berjalan dan gerakkan mouse untuk melihat sekeliling.', s: 'Klik layar dahulu untuk mengunci kursor.' },
-    { ic: '👆', t: 'Cukup Klik Langkahnya', d: 'Panel “Langkah Ergonomi” di kiri berisi 6 tugas. Klik salah satu langkah — objeknya otomatis terpilih dan siap diatur.', s: 'Tidak perlu mencari objek satu per satu.' },
-    { ic: '🎚️', t: 'Atur dengan Tombol Besar', d: 'Kartu pengaturan muncul di bawah layar. Klik tombol ▲ ▼ atau panah untuk mengubah posisi — angka dan skor berubah langsung.', s: 'Bisa juga pakai keyboard: R/T naik-turun, ↑↓←→ geser, Q/E putar.' },
-    { ic: '🎯', t: 'Kejar Zona Hijau', d: 'Setiap langkah punya penunjuk target. Dekatkan penanda kuning ke zona hijau sampai muncul tanda ✓.', s: 'Bayangan hijau di ruangan menunjukkan posisi ideal.' },
-    { ic: '🪑', t: 'Duduk & Rasakan', d: 'Tekan C untuk duduk di kursi. Kamera turun ke tinggi mata Anda saat duduk sehingga terasa apakah monitor sudah sejajar mata.', s: 'Tekan C lagi untuk berdiri.' },
+    { ic: isMobile ? '📱' : '🎮', t: 'Jelajahi Ruangan', d: isMobile ? 'Gunakan joystick kiri untuk berjalan, geser layar kanan untuk melihat sekeliling.' : 'Gunakan W A S D untuk berjalan dan gerakkan mouse untuk melihat sekeliling.', s: isMobile ? 'Joystick muncul otomatis di pojok bawah kiri.' : 'Klik layar dahulu untuk mengunci kursor.' },
+    { ic: '✋', t: 'Ambil & Pindahkan Objek', d: isMobile ? 'Tap objek (kursi, meja, dll) → objek bersinar hijau → geser layar → objek mengikuti pandangan → tap lagi untuk meletakkan.' : 'Arahkan crosshair ke objek → Klik kiri → objek bersinar hijau & mengikuti pandangan → Klik kiri lagi untuk meletakkan.', s: 'Skor ergonomi berubah otomatis setiap objek dilepas.' },
+    { ic: '📊', t: 'Pantau Skor Real-Time', d: 'Panel kiri menampilkan 6 langkah ergonomi. Skor berubah langsung saat objek dipindah.', s: 'Kejar zona hijau di setiap langkah!' },
+    { ic: '🎯', t: 'Kejar Zona Hijau', d: 'Setiap langkah punya penunjuk target. Klik langkah di panel kiri untuk memilih objek langsung.', s: 'Bayangan hijau di ruangan menunjukkan posisi ideal.' },
+    { ic: '🪑', t: 'Duduk & Rasakan', d: isMobile ? 'Tekan tombol C di layar untuk duduk.' : 'Tekan C untuk duduk di kursi. Kamera turun ke tinggi mata Anda saat duduk.', s: 'Tekan C lagi untuk berdiri.' },
   ];
   const s = steps[i];
   return (
@@ -210,18 +217,33 @@ function Results({ score, onMenu, onRetry }: { score: ErgonomicScore; onMenu: ()
 /* ═══════════════════════ GAME ═══════════════════════ */
 type Action = 'up' | 'down' | 'fwd' | 'back' | 'left' | 'right' | 'rotL' | 'rotR';
 
+// ref untuk menyimpan state joystick mobile (tidak perlu re-render)
+type JoyState = { active: boolean; id: number; x: number; y: number; dx: number; dy: number };
+const mkJoy = (): JoyState => ({ active: false, id: -1, x: 0, y: 0, dx: 0, dy: 0 });
+
 function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
   furniture: FurnitureItem[]; setFurniture: React.Dispatch<React.SetStateAction<FurnitureItem[]>>;
   gs: GameState; setGs: React.Dispatch<React.SetStateAction<GameState>>;
   onEvaluate: () => void; onExit: () => void;
 }) {
+  const isMobile = gs.settings.device === 'mobile';
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const world = useRef<RenderWorld & { keys: Record<string, boolean>; locked: boolean; sitting: boolean; sitT: number; moveSpeed: number; sens: number; raf: number }>({
     camX: 0, camY: 1.65, camZ: 0.9, yaw: Math.PI, pitch: -0.12,
-    furniture: deepCopy(furniture), selectedId: null, hoveredId: null,
+    furniture: deepCopy(furniture), selectedId: null, hoveredId: null, heldId: null,
     darkMode: gs.settings.darkMode, showGuide: true, interactionMode: false,
     keys: {}, locked: false, sitting: false, sitT: 0, moveSpeed: 50, sens: 50, raf: 0,
   });
+
+  // Joystick refs (Mobile)
+  const joyMove = useRef<JoyState>(mkJoy());
+  const joyLook = useRef<JoyState>(mkJoy());
+  const [joyMoveUi, setJoyMoveUi] = useState({ active: false, x: 0, y: 0, dx: 0, dy: 0 });
+  const [joyLookUi, setJoyLookUi] = useState({ active: false, x: 0, y: 0, dx: 0, dy: 0 });
+
+  // State untuk objek yang sedang "dipegang"
+  const heldId = useRef<string | null>(null);
+  const [heldName, setHeldName] = useState<string | null>(null);
 
   const [ui, setUi] = useState({ selId: null as string | null, adjust: false, sitting: false, hoverName: '', help: false, guide: true, toast: '' });
   const toastT = useRef<number>(0);
@@ -244,7 +266,7 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
     toastT.current = window.setTimeout(() => setUi(p => ({ ...p, toast: '' })), 2600);
   }, []);
 
-  /* ── Pilih objek ── */
+  /* ── Pilih objek (untuk panel kiri / keyboard shortcut) ── */
   const selectItem = useCallback((id: string | null, silent = false) => {
     world.current.selectedId = id;
     world.current.interactionMode = !!id;
@@ -256,7 +278,30 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
     }
   }, [toast]);
 
-  /* ── Terapkan perubahan ── */
+  /* ── Commit posisi furniture yang dipegang ke React state → score update ── */
+  const commitHeld = useCallback(() => {
+    const id = heldId.current;
+    if (!id) return;
+    const worldFurniture = world.current.furniture;
+    const updated = deepCopy(worldFurniture);
+    heldId.current = null;
+    world.current.heldId = null;
+    setHeldName(null);
+    setFurniture(updated);
+  }, [setFurniture]);
+
+  /* ── Ambil objek (Hold mechanic) ── */
+  const pickupObject = useCallback((id: string) => {
+    heldId.current = id;
+    world.current.heldId = id;
+    const it = world.current.furniture.find(f => f.id === id);
+    if (it) {
+      setHeldName(it.name);
+      toast(`✋ ${ICON[it.type]} ${it.name} — Klik/tap lagi untuk meletakkan`);
+    }
+  }, [toast]);
+
+  /* ── Terapkan perubahan (tetap tersedia untuk AdjustCard & keyboard) ── */
   const applyRef = useRef<(a: Action) => void>(() => {});
   applyRef.current = (a: Action) => {
     const id = world.current.selectedId;
@@ -277,11 +322,9 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
         case 'rotL': it.rotation.y -= R; break;
         case 'rotR': it.rotation.y += R; break;
       }
-      // batas area meja / ruangan
       it.position.x = clamp(it.position.x, -1.9, 1.9);
       it.position.z = clamp(it.position.z, -2.6, 0.4);
       if (it.type === 'desk' && it.position.y !== before) {
-        // benda di atas meja ikut naik/turun
         const d = it.position.y - before;
         next.forEach(o => { if (o.type === 'monitor') o.position.y = clamp(o.position.y + d, o.minHeight, o.maxHeight); });
       }
@@ -302,84 +345,424 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
     const onResize = () => renderer.resize();
     window.addEventListener('resize', onResize);
 
-    const onCanvasClick = () => { if (!world.current.interactionMode) canvas.requestPointerLock(); };
-    canvas.addEventListener('click', onCanvasClick);
-    const onLockChange = () => { world.current.locked = document.pointerLockElement === canvas; };
-    document.addEventListener('pointerlockchange', onLockChange);
+    // Desktop: pointer lock
+    if (!isMobile) {
+      const onCanvasClick = () => {
+        const w = world.current;
+        if (heldId.current) {
+          // Klik kiri saat ada yang dipegang → lepaskan
+          commitHeld();
+          return;
+        }
+        if (w.hoveredId && w.locked) {
+          // Klik kiri saat crosshair mengarah ke objek → angkat
+          pickupObject(w.hoveredId);
+          return;
+        }
+        if (!w.locked) canvas.requestPointerLock();
+      };
+      canvas.addEventListener('click', onCanvasClick);
 
-    const onMouse = (e: MouseEvent) => {
-      if (!world.current.locked) return;
-      const s = world.current.sens / 6000;
-      world.current.yaw -= e.movementX * s;
-      world.current.pitch = clamp(world.current.pitch - e.movementY * s, -1.25, 1.25);
-    };
-    document.addEventListener('mousemove', onMouse);
+      const onLockChange = () => { world.current.locked = document.pointerLockElement === canvas; };
+      document.addEventListener('pointerlockchange', onLockChange);
 
-    const onKey = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      world.current.keys[k] = true;
-      const w = world.current;
+      const onMouse = (e: MouseEvent) => {
+        if (!world.current.locked) return;
+        const s = world.current.sens / 6000;
+        world.current.yaw -= e.movementX * s;
+        world.current.pitch = clamp(world.current.pitch - e.movementY * s, -1.25, 1.25);
+      };
+      document.addEventListener('mousemove', onMouse);
 
-      if (k === 'c') {
-        w.sitting = !w.sitting;
-        setUi(p => ({ ...p, sitting: w.sitting }));
-        toast(w.sitting ? '🪑 Duduk — arahkan pandangan ke monitor, apakah sejajar mata?' : '🧍 Berdiri');
-        if (w.sitting) { w.yaw = Math.PI; w.pitch = 0; }   // hadap monitor, pandangan lurus
+      // Scroll wheel: naik/turun objek yang dipegang
+      const onWheel = (e: WheelEvent) => {
+        const id = heldId.current;
+        if (!id) return;
+        e.preventDefault();
+        const it = world.current.furniture.find(f => f.id === id);
+        if (!it) return;
+        it.position.y = clamp(it.position.y - e.deltaY * 0.0005, it.minHeight, it.maxHeight);
+      };
+      canvas.addEventListener('wheel', onWheel, { passive: false });
+
+      return () => {
+        cancelAnimationFrame(world.current.raf);
+        window.removeEventListener('resize', onResize);
+        canvas.removeEventListener('click', onCanvasClick);
+        document.removeEventListener('pointerlockchange', onLockChange);
+        document.removeEventListener('mousemove', onMouse);
+        canvas.removeEventListener('wheel', onWheel);
+        document.removeEventListener('keydown', onKey);
+        document.removeEventListener('keyup', onKeyUp);
+      };
+    }
+
+    // Mobile: touch controls
+    const JOYSTICK_R = 60;
+    const onTouchStart = (e: TouchEvent) => {
+      e.preventDefault();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        const isLeft = t.clientX < window.innerWidth / 2;
+
+        // Jika tap di tengah (area crosshair) dan ada objek dipegang/dihover
+        const midX = Math.abs(t.clientX - window.innerWidth / 2);
+        const midY = Math.abs(t.clientY - window.innerHeight / 2);
+        if (midX < 60 && midY < 60) {
+          if (heldId.current) {
+            commitHeld();
+            return;
+          } else if (world.current.hoveredId) {
+            pickupObject(world.current.hoveredId);
+            return;
+          }
+        }
+
+        if (isLeft && !joyMove.current.active) {
+          joyMove.current = { active: true, id: t.identifier, x: t.clientX, y: t.clientY, dx: 0, dy: 0 };
+          setJoyMoveUi({ active: true, x: t.clientX, y: t.clientY, dx: 0, dy: 0 });
+        } else if (!isLeft && !joyLook.current.active) {
+          joyLook.current = { active: true, id: t.identifier, x: t.clientX, y: t.clientY, dx: 0, dy: 0 };
+          setJoyLookUi({ active: true, x: t.clientX, y: t.clientY, dx: 0, dy: 0 });
+        }
       }
-      if (k === 'g') { w.showGuide = !w.showGuide; setUi(p => ({ ...p, guide: w.showGuide })); }
-      if (k === 'h') setUi(p => ({ ...p, help: !p.help }));
-      if (k === 'escape' && w.selectedId) selectItem(null);
-      if (k === 'f') { if (w.selectedId) selectItem(null); else if (w.hoveredId) selectItem(w.hoveredId); }
-
-      const nums: Record<string, string> = { '1': 'chair', '2': 'desk', '3': 'monitor', '4': 'keyboard', '5': 'mouse', '6': 'lamp' };
-      if (nums[k]) selectItem(nums[k]);
-
-      if (w.selectedId) {
-        const map: Record<string, Action> = {
-          arrowup: 'fwd', arrowdown: 'back', arrowleft: 'left', arrowright: 'right',
-          r: 'up', t: 'down', q: 'rotL', e: 'rotR',
-        };
-        const a = map[k];
-        if (a) { e.preventDefault(); applyRef.current(a); }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        const jm = joyMove.current, jl = joyLook.current;
+        if (jm.active && t.identifier === jm.id) {
+          const rawDx = t.clientX - jm.x, rawDy = t.clientY - jm.y;
+          const len = Math.hypot(rawDx, rawDy);
+          const capped = Math.min(len, JOYSTICK_R);
+          jm.dx = (rawDx / (len || 1)) * capped;
+          jm.dy = (rawDy / (len || 1)) * capped;
+          setJoyMoveUi(p => ({ ...p, dx: jm.dx, dy: jm.dy }));
+        }
+        if (jl.active && t.identifier === jl.id) {
+          const rawDx = t.clientX - jl.x, rawDy = t.clientY - jl.y;
+          const len = Math.hypot(rawDx, rawDy);
+          const capped = Math.min(len, JOYSTICK_R);
+          jl.dx = (rawDx / (len || 1)) * capped;
+          jl.dy = (rawDy / (len || 1)) * capped;
+          setJoyLookUi(p => ({ ...p, dx: jl.dx, dy: jl.dy }));
+        }
       }
     };
-    const onKeyUp = (e: KeyboardEvent) => { world.current.keys[e.key.toLowerCase()] = false; };
+    const onTouchEnd = (e: TouchEvent) => {
+      e.preventDefault();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (joyMove.current.id === t.identifier) {
+          joyMove.current = mkJoy();
+          setJoyMoveUi({ active: false, x: 0, y: 0, dx: 0, dy: 0 });
+        }
+        if (joyLook.current.id === t.identifier) {
+          joyLook.current = mkJoy();
+          setJoyLookUi({ active: false, x: 0, y: 0, dx: 0, dy: 0 });
+        }
+      }
+    };
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+    return () => {
+      cancelAnimationFrame(world.current.raf);
+      window.removeEventListener('resize', onResize);
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', onTouchEnd);
+      canvas.removeEventListener('touchcancel', onTouchEnd);
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keyup', onKeyUp);
+    };
+  }, [isMobile, selectItem, toast, commitHeld, pickupObject]); // eslint-disable-line
+
+  /* ── keyboard handlers (desktop) & game loop (shared) ── */
+  const onKey = useCallback((e: KeyboardEvent) => {
+    const k = e.key.toLowerCase();
+    world.current.keys[k] = true;
+    const w = world.current;
+
+    if (k === 'c') {
+      w.sitting = !w.sitting;
+      setUi(p => ({ ...p, sitting: w.sitting }));
+      toast(w.sitting ? '🪑 Duduk — arahkan pandangan ke monitor, apakah sejajar mata?' : '🧍 Berdiri');
+      if (w.sitting) { w.yaw = Math.PI; w.pitch = 0; }
+    }
+    if (k === 'g') { w.showGuide = !w.showGuide; setUi(p => ({ ...p, guide: w.showGuide })); }
+    if (k === 'h') setUi(p => ({ ...p, help: !p.help }));
+    if (k === 'escape') {
+      if (heldId.current) commitHeld();
+      else if (w.selectedId) selectItem(null);
+    }
+    if (k === 'f') {
+      if (heldId.current) { commitHeld(); }
+      else if (w.hoveredId && !heldId.current) pickupObject(w.hoveredId);
+    }
+
+    if (w.selectedId) {
+      const map: Record<string, Action> = {
+        arrowup: 'fwd', arrowdown: 'back', arrowleft: 'left', arrowright: 'right',
+        r: 'up', t: 'down', q: 'rotL', e: 'rotR',
+      };
+      const a = map[k];
+      if (a) { e.preventDefault(); applyRef.current(a); }
+    } else if (heldId.current) {
+      const it = w.furniture.find(f => f.id === heldId.current);
+      if (it) {
+        if (k === 'r') it.position.y = clamp(it.position.y + 0.05, it.minHeight, it.maxHeight);
+        if (k === 't') it.position.y = clamp(it.position.y - 0.05, it.minHeight, it.maxHeight);
+        if (k === 'q') it.rotation.y = (it.rotation.y - 5 + 360) % 360;
+        if (k === 'e') it.rotation.y = (it.rotation.y + 5) % 360;
+      }
+    }
+  }, [toast, selectItem, commitHeld, pickupObject]);
+
+  const onKeyUp = useCallback((e: KeyboardEvent) => { world.current.keys[e.key.toLowerCase()] = false; }, []);
+
+  /* ── Main render loop (always runs) ── */
+  useEffect(() => {
+    const canvas = canvasRef.current!;
+    let renderer: ReturnType<typeof createRenderer>;
+    try { renderer = createRenderer(canvas, () => world.current); }
+    catch { alert('WebGL tidak didukung browser ini.'); return; }
+
+    renderer.resize();
+    const onResize = () => renderer.resize();
+    window.addEventListener('resize', onResize);
     document.addEventListener('keydown', onKey);
     document.addEventListener('keyup', onKeyUp);
 
-    let last = 0, hoverName = '';
+    // Desktop pointer lock
+    let cleanupDesktop: (() => void) | null = null;
+    if (!isMobile) {
+      const onCanvasClick = () => {
+        const w = world.current;
+        if (heldId.current) { commitHeld(); return; }
+        if (w.hoveredId && w.locked) { pickupObject(w.hoveredId); return; }
+        if (!w.locked) canvas.requestPointerLock();
+      };
+      const onLockChange = () => { world.current.locked = document.pointerLockElement === canvas; };
+      const onMouse = (e: MouseEvent) => {
+        if (!world.current.locked) return;
+        const s = world.current.sens / 6000;
+        world.current.yaw -= e.movementX * s;
+        world.current.pitch = clamp(world.current.pitch - e.movementY * s, -1.25, 1.25);
+      };
+      const onWheel = (e: WheelEvent) => {
+        const id = heldId.current;
+        if (!id) return;
+        e.preventDefault();
+        const it = world.current.furniture.find(f => f.id === id);
+        if (!it) return;
+        it.position.y = clamp(it.position.y - e.deltaY * 0.0005, it.minHeight, it.maxHeight);
+      };
+      canvas.addEventListener('click', onCanvasClick);
+      document.addEventListener('pointerlockchange', onLockChange);
+      document.addEventListener('mousemove', onMouse);
+      canvas.addEventListener('wheel', onWheel, { passive: false });
+      cleanupDesktop = () => {
+        canvas.removeEventListener('click', onCanvasClick);
+        document.removeEventListener('pointerlockchange', onLockChange);
+        document.removeEventListener('mousemove', onMouse);
+        canvas.removeEventListener('wheel', onWheel);
+      };
+    }
+
+    // Mobile touch
+    let cleanupMobile: (() => void) | null = null;
+    if (isMobile) {
+      const JOYSTICK_R = 60;
+      const onTouchStart = (e: TouchEvent) => {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          const midX = Math.abs(t.clientX - window.innerWidth / 2);
+          const midY = Math.abs(t.clientY - window.innerHeight / 2);
+          if (midX < 70 && midY < 70) {
+            if (heldId.current) { commitHeld(); return; }
+            if (world.current.hoveredId) { pickupObject(world.current.hoveredId); return; }
+          }
+          const isLeft = t.clientX < window.innerWidth / 2;
+          if (isLeft && !joyMove.current.active) {
+            joyMove.current = { active: true, id: t.identifier, x: t.clientX, y: t.clientY, dx: 0, dy: 0 };
+            setJoyMoveUi({ active: true, x: t.clientX, y: t.clientY, dx: 0, dy: 0 });
+          } else if (!isLeft && !joyLook.current.active) {
+            joyLook.current = { active: true, id: t.identifier, x: t.clientX, y: t.clientY, dx: 0, dy: 0 };
+            setJoyLookUi({ active: true, x: t.clientX, y: t.clientY, dx: 0, dy: 0 });
+          }
+        }
+      };
+      const onTouchMove = (e: TouchEvent) => {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (joyMove.current.active && t.identifier === joyMove.current.id) {
+            const rawDx = t.clientX - joyMove.current.x, rawDy = t.clientY - joyMove.current.y;
+            const len = Math.hypot(rawDx, rawDy);
+            const capped = Math.min(len, JOYSTICK_R);
+            joyMove.current.dx = (rawDx / (len || 1)) * capped;
+            joyMove.current.dy = (rawDy / (len || 1)) * capped;
+            setJoyMoveUi(p => ({ ...p, dx: joyMove.current.dx, dy: joyMove.current.dy }));
+          }
+          if (joyLook.current.active && t.identifier === joyLook.current.id) {
+            const rawDx = t.clientX - joyLook.current.x, rawDy = t.clientY - joyLook.current.y;
+            const len = Math.hypot(rawDx, rawDy);
+            const capped = Math.min(len, JOYSTICK_R);
+            joyLook.current.dx = (rawDx / (len || 1)) * capped;
+            joyLook.current.dy = (rawDy / (len || 1)) * capped;
+            setJoyLookUi(p => ({ ...p, dx: joyLook.current.dx, dy: joyLook.current.dy }));
+            // Apply look immediately
+            world.current.yaw -= (rawDx - joyLook.current.dx) * 0.003;
+            world.current.pitch = clamp(world.current.pitch - (rawDy - joyLook.current.dy) * 0.003, -1.25, 1.25);
+          }
+        }
+      };
+      const onTouchEnd = (e: TouchEvent) => {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (joyMove.current.id === t.identifier) { joyMove.current = mkJoy(); setJoyMoveUi({ active: false, x: 0, y: 0, dx: 0, dy: 0 }); }
+          if (joyLook.current.id === t.identifier) { joyLook.current = mkJoy(); setJoyLookUi({ active: false, x: 0, y: 0, dx: 0, dy: 0 }); }
+        }
+      };
+      canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+      canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+      canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+      canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+      cleanupMobile = () => {
+        canvas.removeEventListener('touchstart', onTouchStart);
+        canvas.removeEventListener('touchmove', onTouchMove);
+        canvas.removeEventListener('touchend', onTouchEnd);
+        canvas.removeEventListener('touchcancel', onTouchEnd);
+      };
+    }
+
+    let last = 0, hoverName = '', lastLiveUpdate = 0;
+    let initDesk = false, prevDesk = { x: 0, y: 0, z: 0 };
     const loop = (t: number) => {
       const dt = Math.min((t - last) / 1000, 0.05); last = t;
       const w = world.current;
 
-      if (w.locked && !w.interactionMode && !w.sitting) {
+      // ── Gerak Desktop ──
+      if (!isMobile && w.locked && !w.sitting) {
         const sp = (w.moveSpeed / 50) * 2.4 * dt;
         const sy = Math.sin(w.yaw), cy = Math.cos(w.yaw);
-        if (w.keys['w']) { w.camX += sy * sp; w.camZ += cy * sp; }
-        if (w.keys['s']) { w.camX -= sy * sp; w.camZ -= cy * sp; }
+        if (w.keys['w'] || w.keys['arrowup']) { w.camX += sy * sp; w.camZ += cy * sp; }
+        if (w.keys['s'] || w.keys['arrowdown']) { w.camX -= sy * sp; w.camZ -= cy * sp; }
         if (w.keys['a']) { w.camX += cy * sp; w.camZ -= sy * sp; }
         if (w.keys['d']) { w.camX -= cy * sp; w.camZ += sy * sp; }
         w.camX = clamp(w.camX, -3.6, 3.6); w.camZ = clamp(w.camZ, -3.4, 3.6);
       }
 
-      // duduk: kamera menuju kursi, tinggi mata = permukaan dudukan + 72 cm
+      // ── Gerak Mobile (joystick) ──
+      if (isMobile && !w.sitting) {
+        const jm = joyMove.current;
+        const jl = joyLook.current;
+        if (jm.active) {
+          const sp = (w.moveSpeed / 50) * 2.4 * dt;
+          const nx = jm.dx / 60, ny = jm.dy / 60;
+          const sy = Math.sin(w.yaw), cy = Math.cos(w.yaw);
+          w.camX += (sy * ny + cy * (-nx)) * sp;
+          w.camZ += (cy * ny + sy * nx) * sp;
+          w.camX = clamp(w.camX, -3.6, 3.6); w.camZ = clamp(w.camZ, -3.4, 3.6);
+        }
+        if (jl.active) {
+          const sens = w.sens / 6000 * 60;
+          w.yaw -= jl.dx * sens * dt;
+          w.pitch = clamp(w.pitch - jl.dy * sens * dt, -1.25, 1.25);
+        }
+      }
+
+      // ── Duduk ──
       const chair = w.furniture.find(f => f.type === 'chair')!;
       w.sitT += ((w.sitting ? 1 : 0) - w.sitT) * Math.min(1, dt * 6);
       const tX = chair.position.x, tZ = chair.position.z + 0.04;
-      const chairSeatSurf = chair.position.y + chair.scale.y / 2;  // permukaan dudukan
-      const eyeSit = chairSeatSurf + 0.72;  // tinggi mata saat duduk = dudukan + torso ~72 cm
+      const chairSeatSurf = chair.position.y + chair.scale.y / 2;
+      const eyeSit = chairSeatSurf + 0.72;
       w.camY += ((w.sitting ? eyeSit : 1.65) - w.camY) * Math.min(1, dt * 6);
       if (w.sitT > 0.01) {
         w.camX += (tX - w.camX) * Math.min(1, dt * 5 * w.sitT);
         w.camZ += (tZ - w.camZ) * Math.min(1, dt * 5 * w.sitT);
       }
 
-      if (!w.interactionMode) {
+      // ── Enforce Desk Bounds & Hierarchy ──
+      const desk = w.furniture.find(f => f.type === 'desk');
+      if (desk) {
+        if (!initDesk) {
+          prevDesk = { x: desk.position.x, y: desk.position.y, z: desk.position.z };
+          initDesk = true;
+        }
+        const deskDx = desk.position.x - prevDesk.x;
+        const deskDy = desk.position.y - prevDesk.y;
+        const deskDz = desk.position.z - prevDesk.z;
+
+        const deskY = deskSurfaceY(desk);
+        const deskMinX = desk.position.x - desk.scale.x / 2;
+        const deskMaxX = desk.position.x + desk.scale.x / 2;
+        const deskMinZ = desk.position.z - desk.scale.z / 2;
+        const deskMaxZ = desk.position.z + desk.scale.z / 2;
+
+        w.furniture.forEach(it => {
+          if (['monitor', 'keyboard', 'mouse', 'lamp'].includes(it.type)) {
+            // Apply delta if desk moved and this item is NOT currently held
+            if (it.id !== heldId.current && (deskDx !== 0 || deskDy !== 0 || deskDz !== 0)) {
+              it.position.x += deskDx;
+              it.position.y += deskDy;
+              it.position.z += deskDz;
+            }
+            // Constrain to desk bounds (applies to all, even held items)
+            const hw = it.scale.x / 2, hz = it.scale.z / 2;
+            it.position.x = clamp(it.position.x, deskMinX + hw, deskMaxX - hw);
+            it.position.z = clamp(it.position.z, deskMinZ + hz, deskMaxZ - hz);
+            const targetMinY = deskY + it.scale.y / 2 + 0.005;
+            if (it.position.y < targetMinY) it.position.y = targetMinY;
+          }
+        });
+        prevDesk = { x: desk.position.x, y: desk.position.y, z: desk.position.z };
+      }
+
+      // ── Update posisi objek yang dipegang (raycast ke permukaan meja/lantai) ──
+      if (heldId.current) {
+        const it = w.furniture.find(f => f.id === heldId.current);
+        if (it) {
+          const cp = Math.cos(w.pitch);
+          const dir: [number,number,number] = [Math.sin(w.yaw)*cp, Math.sin(w.pitch), Math.cos(w.yaw)*cp];
+          const ori: [number,number,number] = [w.camX, w.camY, w.camZ];
+
+          // Tentukan bidang target berdasarkan tipe objek
+          const deskItem = w.furniture.find(f => f.type === 'desk');
+          const deskY = deskItem ? deskSurfaceY(deskItem) : 0.735;
+          const isOnDesk = ['monitor','keyboard','mouse','lamp'].includes(it.type);
+          const targetY = isOnDesk ? deskY : (it.position.y); // lantai untuk kursi/meja
+
+          const hit = raycastPlane(ori, dir, targetY);
+          if (hit) {
+            // Kita sudah set clamp sesuai meja di atas, jadi ini cukup assign posisi raycast sementara
+            it.position.x = hit[0];
+            it.position.z = hit[2];
+          }
+        }
+        if (t - lastLiveUpdate > 100) {
+          setFurniture(deepCopy(w.furniture));
+          lastLiveUpdate = t;
+        }
+      }
+
+      // ── Hover detection (hanya saat tidak ada yang dipegang) ──
+      if (!heldId.current) {
         const id = renderer.pick();
         w.hoveredId = id;
         const n = id ? w.furniture.find(f => f.id === id)?.name ?? '' : '';
         if (n !== hoverName) { hoverName = n; setUi(p => ({ ...p, hoverName: n })); }
-      } else if (w.hoveredId) { w.hoveredId = null; }
+      } else {
+        w.hoveredId = null;
+        if (hoverName) { hoverName = ''; setUi(p => ({ ...p, hoverName: '' })); }
+      }
 
       renderer.frame(t / 1000);
       w.raf = requestAnimationFrame(loop);
@@ -389,36 +772,39 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
     return () => {
       cancelAnimationFrame(world.current.raf);
       window.removeEventListener('resize', onResize);
-      canvas.removeEventListener('click', onCanvasClick);
-      document.removeEventListener('pointerlockchange', onLockChange);
-      document.removeEventListener('mousemove', onMouse);
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('keyup', onKeyUp);
+      cleanupDesktop?.();
+      cleanupMobile?.();
     };
-  }, [selectItem, toast]);
+  }, [isMobile, onKey, onKeyUp, commitHeld, pickupObject]);
 
   const allDone = steps.every(s => s.done);
   const sc = score.total;
   const scColor = sc >= 80 ? '#22c55e' : sc >= 55 ? '#eab308' : '#ef4444';
+  const JOYSTICK_R = 60;
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden select-none">
       <canvas ref={canvasRef} className="block w-full h-full" />
 
       {/* Crosshair */}
-      {!ui.adjust && (
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-          <div className="relative">
-            <div className="w-6 h-6 rounded-full border-2 border-white/40" />
-            <div className="absolute inset-0 flex items-center justify-center"><div className="w-1 h-1 rounded-full bg-white/90" /></div>
-            {ui.hoverName && (
-              <div className="absolute top-9 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] bg-black/80 text-white px-2.5 py-1 rounded-lg border border-white/15">
-                {ui.hoverName} · <span className="text-indigo-300">F pilih</span>
-              </div>
-            )}
-          </div>
+      <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+        <div className="relative">
+          <div className={`w-6 h-6 rounded-full border-2 transition-colors ${heldName ? 'border-green-400 shadow-[0_0_12px_rgba(74,222,128,0.8)]' : 'border-white/40'}`} />
+          <div className="absolute inset-0 flex items-center justify-center"><div className={`w-1.5 h-1.5 rounded-full ${heldName ? 'bg-green-400' : 'bg-white/90'}`} /></div>
+          {heldName && (
+            <div className="absolute top-9 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] bg-green-700/90 text-white px-2.5 py-1 rounded-lg border border-green-400/40">
+              ✋ {heldName} — klik/tap untuk lepas
+            </div>
+          )}
+          {!heldName && ui.hoverName && (
+            <div className="absolute top-9 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] bg-black/80 text-white px-2.5 py-1 rounded-lg border border-white/15">
+              {ui.hoverName} · <span className="text-indigo-300">{isMobile ? 'Tap' : 'F / Klik'} ambil</span>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* ══ SKOR (kanan atas) ══ */}
       <div className="absolute top-4 right-4 flex items-start gap-2">
@@ -443,7 +829,7 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
       </div>
 
       {/* ══ LANGKAH ERGONOMI (kiri) ══ */}
-      <div className="absolute top-4 left-4 w-[270px]">
+      <div className="absolute top-4 left-4 w-[260px]">
         <div className="bg-black/65 backdrop-blur-md rounded-2xl border border-white/10 overflow-hidden">
           <div className="px-4 py-2.5 border-b border-white/10 flex items-center justify-between">
             <h3 className="text-white text-[13px] font-bold">📋 Langkah Ergonomi</h3>
@@ -465,24 +851,99 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
         )}
       </div>
 
-      {/* ══ KARTU PENGATURAN (bawah tengah) ══ */}
-      {selected && <AdjustCard item={selected} all={furniture} onAct={a => applyRef.current(a)} onClose={() => selectItem(null)} guide={ui.guide}
+      {/* ══ KARTU PENGATURAN (bawah tengah) — untuk height/rotate saja ══ */}
+      {selected && !heldName && <AdjustCard item={selected} all={furniture} onAct={a => applyRef.current(a)} onClose={() => selectItem(null)} guide={ui.guide}
         onToggleGuide={() => { world.current.showGuide = !world.current.showGuide; setUi(p => ({ ...p, guide: world.current.showGuide })); }} />}
 
-      {/* ══ Petunjuk bawah kiri ══ */}
-      {!selected && (
-        <div className="absolute bottom-4 left-4 bg-black/55 backdrop-blur-md rounded-xl px-4 py-3 border border-white/10 max-w-[270px]">
-          <p className="text-white text-[12px] font-semibold mb-1">👈 Klik langkah di panel kiri</p>
-          <p className="text-slate-400 text-[11px] leading-relaxed">Objek akan otomatis terpilih dan kartu pengaturan muncul. Atau arahkan pandangan ke objek lalu tekan <b className="text-indigo-300">F</b>.</p>
+      {/* ══ HELD OBJECT CONTROLS (Tengah Bawah) ══ */}
+      {heldName && (
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-black/60 backdrop-blur-md px-5 py-3 rounded-2xl border border-green-500/30">
+          <div className="flex flex-col items-center gap-1.5">
+             <span className="text-[10px] text-green-400 font-bold tracking-wider">TINGGI (R/T)</span>
+             <div className="flex gap-2">
+               <Hold onAct={() => { const w=world.current; if(w.heldId){ const it=w.furniture.find(f=>f.id===w.heldId); if(it) it.position.y = clamp(it.position.y+0.05, it.minHeight, it.maxHeight); }}}>▲</Hold>
+               <Hold onAct={() => { const w=world.current; if(w.heldId){ const it=w.furniture.find(f=>f.id===w.heldId); if(it) it.position.y = clamp(it.position.y-0.05, it.minHeight, it.maxHeight); }}}>▼</Hold>
+             </div>
+          </div>
+          <div className="w-px h-10 bg-white/20" />
+          <div className="flex flex-col items-center gap-1.5">
+             <span className="text-[10px] text-green-400 font-bold tracking-wider">PUTAR (Q/E)</span>
+             <div className="flex gap-2">
+               <Hold onAct={() => { const w=world.current; if(w.heldId){ const it=w.furniture.find(f=>f.id===w.heldId); if(it) it.rotation.y = (it.rotation.y - 5 + 360)%360; }}}>⟲</Hold>
+               <Hold onAct={() => { const w=world.current; if(w.heldId){ const it=w.furniture.find(f=>f.id===w.heldId); if(it) it.rotation.y = (it.rotation.y + 5)%360; }}}>⟳</Hold>
+             </div>
+          </div>
         </div>
       )}
 
-      {/* ══ Kontrol bawah kanan ══ */}
-      <div className="absolute bottom-4 right-4 bg-black/45 backdrop-blur-sm rounded-xl px-3 py-2.5 text-[11px] text-slate-400 space-y-0.5 leading-relaxed">
-        <p><K>W A S D</K> jalan · <K>Mouse</K> lihat</p>
-        <p><K>C</K> duduk/berdiri · <K>G</K> panduan</p>
-        <p><K>1-6</K> pilih objek · <K>H</K> bantuan</p>
-      </div>
+      {/* ══ Petunjuk bawah kiri ══ */}
+      {!selected && !heldName && (
+        <div className="absolute bottom-4 left-4 bg-black/55 backdrop-blur-md rounded-xl px-4 py-3 border border-white/10 max-w-[270px]">
+          <p className="text-white text-[12px] font-semibold mb-1">✋ Cara memindahkan objek</p>
+          <p className="text-slate-400 text-[11px] leading-relaxed">
+            {isMobile
+              ? 'Arahkan crosshair ke objek → tap tengah layar → objek mengikuti pandangan → tap lagi untuk letakkan.'
+              : 'Arahkan crosshair ke objek → klik kiri untuk ambil → objek mengikuti cursor → klik kiri lagi untuk letakkan. Scroll untuk naik/turun.'}
+          </p>
+        </div>
+      )}
+
+      {/* ══ Kontrol bawah kanan (Desktop) ══ */}
+      {!isMobile && (
+        <div className="absolute bottom-4 right-4 bg-black/45 backdrop-blur-sm rounded-xl px-3 py-2.5 text-[11px] text-slate-400 space-y-0.5 leading-relaxed">
+          <p><K>W A S D</K> jalan · <K>Mouse</K> lihat</p>
+          <p><K>Klik</K> ambil/letakkan · <K>Scroll</K> naik/turun</p>
+          <p><K>C</K> duduk · <K>G</K> panduan · <K>H</K> bantuan</p>
+          <p><K>F</K> angkat dilihat</p>
+        </div>
+      )}
+
+      {/* ══ Virtual Joystick (Mobile) ══ */}
+      {isMobile && (
+        <>
+          {/* Joystick Kiri - Gerak */}
+          <div className="absolute bottom-8 left-8 pointer-events-none">
+            <div className="relative w-32 h-32 rounded-full bg-white/10 border-2 border-white/25 backdrop-blur-sm">
+              <div className="absolute inset-0 flex items-center justify-center text-[10px] text-white/30">MOVE</div>
+              {joyMoveUi.active && (
+                <div className="absolute w-12 h-12 rounded-full bg-indigo-400/80 border-2 border-indigo-200/60 shadow-lg"
+                  style={{
+                    left: `calc(50% + ${Math.min(joyMoveUi.dx, JOYSTICK_R)}px - 24px)`,
+                    top: `calc(50% + ${Math.min(joyMoveUi.dy, JOYSTICK_R)}px - 24px)`,
+                  }} />
+              )}
+              {!joyMoveUi.active && <div className="absolute inset-0 flex items-center justify-center"><div className="w-12 h-12 rounded-full bg-white/15 border border-white/20" /></div>}
+            </div>
+          </div>
+          {/* Joystick Kanan - Lihat */}
+          <div className="absolute bottom-8 right-8 pointer-events-none">
+            <div className="relative w-32 h-32 rounded-full bg-white/10 border-2 border-white/25 backdrop-blur-sm">
+              <div className="absolute inset-0 flex items-center justify-center text-[10px] text-white/30">LOOK</div>
+              {joyLookUi.active && (
+                <div className="absolute w-12 h-12 rounded-full bg-purple-400/80 border-2 border-purple-200/60 shadow-lg"
+                  style={{
+                    left: `calc(50% + ${Math.min(joyLookUi.dx, JOYSTICK_R)}px - 24px)`,
+                    top: `calc(50% + ${Math.min(joyLookUi.dy, JOYSTICK_R)}px - 24px)`,
+                  }} />
+              )}
+              {!joyLookUi.active && <div className="absolute inset-0 flex items-center justify-center"><div className="w-12 h-12 rounded-full bg-white/15 border border-white/20" /></div>}
+            </div>
+          </div>
+          {/* Tombol Aksi Mobile */}
+          <div className="absolute bottom-36 right-8 flex flex-col gap-2">
+            <button
+              onTouchStart={e => { e.preventDefault(); world.current.sitting = !world.current.sitting; setUi(p => ({ ...p, sitting: world.current.sitting })); }}
+              className="w-12 h-12 rounded-full bg-amber-500/80 border border-amber-300/40 text-white text-lg grid place-items-center backdrop-blur-sm active:scale-90 transition"
+            >🪑</button>
+            <button
+              onTouchStart={e => { e.preventDefault(); if (heldId.current) commitHeld(); else if (world.current.hoveredId) pickupObject(world.current.hoveredId); }}
+              className={`w-12 h-12 rounded-full border text-white text-lg grid place-items-center backdrop-blur-sm active:scale-90 transition ${
+                heldName ? 'bg-green-500/80 border-green-300/40' : 'bg-white/20 border-white/20'
+              }`}
+            >{heldName ? '📤' : '✋'}</button>
+          </div>
+        </>
+      )}
 
       {/* ══ Status duduk ══ */}
       {ui.sitting && (
@@ -498,7 +959,7 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
         </div>
       )}
 
-      {ui.help && <Modal title="❓ Bantuan" onClose={() => setUi(p => ({ ...p, help: false }))}><HelpBody /></Modal>}
+      {ui.help && <Modal title="❓ Bantuan" onClose={() => setUi(p => ({ ...p, help: false }))}><HelpBody isMobile={isMobile} /></Modal>}
       {gs.showSettings && <Modal title="⚙️ Pengaturan" onClose={() => setGs(p => ({ ...p, showSettings: false }))}>
         <SettingsBody settings={gs.settings} upd={s => setGs(p => ({ ...p, settings: { ...p.settings, ...s } }))} />
       </Modal>}
@@ -644,33 +1105,52 @@ function Hold({ children, onAct, big, highlight }: { children: React.ReactNode; 
   );
 }
 
-function HelpBody() {
+function HelpBody({ isMobile = false }: { isMobile?: boolean }) {
   return (
     <div className="space-y-3 text-[13px] text-slate-300">
       <div className="bg-slate-900/60 rounded-xl p-3.5">
-        <h3 className="text-white font-bold mb-2 text-sm">🎮 Kontrol</h3>
+        <h3 className="text-white font-bold mb-2 text-sm">{isMobile ? '📱' : '🎮'} Kontrol</h3>
         <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
-          <b className="text-indigo-300">W A S D</b><span>Berjalan</span>
-          <b className="text-indigo-300">Mouse</b><span>Melihat sekeliling</span>
-          <b className="text-indigo-300">C</b><span>Duduk / berdiri di kursi</span>
-          <b className="text-indigo-300">1 – 6</b><span>Pilih objek langsung</span>
-          <b className="text-indigo-300">F</b><span>Pilih objek yang dilihat</span>
-          <b className="text-indigo-300">R / T</b><span>Naikkan / turunkan</span>
-          <b className="text-indigo-300">↑ ↓ ← →</b><span>Geser objek</span>
-          <b className="text-indigo-300">Q / E</b><span>Putar objek</span>
-          <b className="text-indigo-300">G</b><span>Bayangan posisi ideal</span>
-          <b className="text-indigo-300">Esc</b><span>Batal memilih</span>
+          {isMobile ? (<>
+            <b className="text-indigo-300">Joystick Kiri</b><span>Berjalan</span>
+            <b className="text-indigo-300">Joystick Kanan</b><span>Melihat sekeliling</span>
+            <b className="text-indigo-300">Tap Tengah Layar</b><span>Ambil / Letakkan objek</span>
+            <b className="text-indigo-300">Tombol ✋</b><span>Angkat objek yang dilihat</span>
+            <b className="text-indigo-300">Tombol 🪑</b><span>Duduk / berdiri di kursi</span>
+          </>) : (<>
+            <b className="text-indigo-300">W A S D</b><span>Berjalan</span>
+            <b className="text-indigo-300">Mouse</b><span>Melihat sekeliling</span>
+            <b className="text-indigo-300">Klik Kiri</b><span>Ambil / Letakkan objek</span>
+            <b className="text-indigo-300">Scroll Mouse</b><span>Naikkan / turunkan objek yang dipegang</span>
+            <b className="text-indigo-300">C</b><span>Duduk / berdiri di kursi</span>
+            <b className="text-indigo-300">F</b><span>Angkat objek yang dilihat crosshair</span>
+            <b className="text-indigo-300">R / T</b><span>Naikkan / turunkan (di AdjustCard)</span>
+            <b className="text-indigo-300">↑ ↓ ← →</b><span>Geser objek (di AdjustCard)</span>
+            <b className="text-indigo-300">Q / E</b><span>Putar objek (di AdjustCard)</span>
+            <b className="text-indigo-300">G</b><span>Bayangan posisi ideal</span>
+            <b className="text-indigo-300">Esc</b><span>Letakkan objek / batal memilih</span>
+          </>)}
         </div>
       </div>
       <div className="bg-slate-900/60 rounded-xl p-3.5">
         <h3 className="text-white font-bold mb-2 text-sm">🎯 Cara Bermain</h3>
         <ol className="list-decimal list-inside space-y-1 text-xs leading-relaxed">
-          <li>Klik salah satu <b className="text-white">Langkah Ergonomi</b> di panel kiri.</li>
-          <li>Kartu pengaturan muncul di bawah — klik <b className="text-white">▲▼</b> atau panah.</li>
-          <li>Geser penanda kuning sampai masuk <b className="text-emerald-400">zona hijau</b>.</li>
-          <li>Tanda <b className="text-emerald-400">✅</b> muncul bila langkah selesai (skor ≥ 80).</li>
-          <li>Tekan <b className="text-white">C</b> untuk duduk dan memeriksa hasilnya.</li>
-          <li>Selesaikan 6 langkah lalu klik <b className="text-white">Lihat Hasil</b>.</li>
+          {isMobile ? (<>
+            <li>Gunakan <b className="text-white">joystick kiri</b> untuk jalan & joystick kanan untuk lihat.</li>
+            <li>Arahkan crosshair ke objek — tap tengah layar atau tombol ✋ untuk <b className="text-white">mengambil</b>.</li>
+            <li>Objek bersinar <b className="text-emerald-400">hijau</b> dan mengikuti pandangan Anda.</li>
+            <li>Tap lagi untuk <b className="text-white">meletakkan</b> — skor ergonomi langsung berubah.</li>
+            <li>Tekan tombol 🪑 untuk duduk dan memeriksa posisi monitor.</li>
+            <li>Selesaikan 6 langkah lalu klik <b className="text-white">Evaluasi</b>.</li>
+          </>) : (<>
+            <li>Klik layar untuk mengunci kursor, lalu <b className="text-white">WASD</b> untuk jalan.</li>
+            <li>Arahkan crosshair ke objek — <b className="text-white">klik kiri</b> untuk mengambil.</li>
+            <li>Objek bersinar <b className="text-emerald-400">hijau</b> dan mengikuti pandangan Anda.</li>
+            <li>Klik kiri lagi untuk <b className="text-white">meletakkan</b> — skor ergonomi langsung berubah.</li>
+            <li>Gunakan <b className="text-white">scroll</b> untuk naikkan/turunkan ketinggian objek yang dipegang.</li>
+            <li>Tekan <b className="text-white">C</b> untuk duduk dan memeriksa hasilnya.</li>
+            <li>Selesaikan 6 langkah lalu klik <b className="text-white">Lihat Hasil</b>.</li>
+          </>)}
         </ol>
       </div>
       <div className="bg-emerald-900/25 border border-emerald-500/20 rounded-xl p-3.5">

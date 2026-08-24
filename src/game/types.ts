@@ -41,6 +41,7 @@ export interface GameSettings {
   volume: number;
   darkMode: boolean;
   graphicsQuality: 'low' | 'medium' | 'high';
+  device: 'desktop' | 'mobile';
 }
 
 export interface GameState {

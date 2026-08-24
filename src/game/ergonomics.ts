@@ -207,9 +207,12 @@ export function getItemScore(item: FurnitureItem, _all: FurnitureItem[]): ItemSc
       const dist = Math.hypot(item.position.x - item.idealPosition.x, item.position.z - item.idealPosition.z);
       const dS = grade(dist, 0, 0.035, 0.25);
       const rS = grade(angleDiff(item.rotation.y, item.idealRotation.y), 0, 5, 40);
-      const s = Math.round(dS * 0.70 + rS * 0.30);
+      const hS = grade(Math.abs(item.position.y - item.idealPosition.y), 0, 0.02, 0.20);
+      const s = Math.round((dS * 0.70 + rS * 0.30) * (hS / 100));
       let hint = 'Keyboard pas — pergelangan tangan lurus.';
-      if (dS < 80) {
+      if (hS < 80) {
+        hint = 'Keyboard melayang! Turunkan hingga menempel ke meja (R/T).';
+      } else if (dS < 80) {
         hint = `Geser keyboard ${Math.round(dist * 100)} cm mendekati posisi ideal (bayangan hijau).`;
       } else if (rS < 80) {
         hint = 'Luruskan keyboard sejajar meja & kursi (Q/E).';
@@ -219,24 +222,22 @@ export function getItemScore(item: FurnitureItem, _all: FurnitureItem[]): ItemSc
 
     case 'mouse': {
       const dist = Math.hypot(item.position.x - item.idealPosition.x, item.position.z - item.idealPosition.z);
-      const s = grade(dist, 0, 0.05, 0.35);
-      return {
-        score: s, status: stat(s),
-        hint: s >= 80
-          ? 'Mouse pas — bahu rileks, siku dekat badan.'
-          : `Geser mouse ${Math.round(dist * 100)} cm mendekati posisi ideal.`,
-      };
+      const dS = grade(dist, 0, 0.05, 0.35);
+      const hS = grade(Math.abs(item.position.y - item.idealPosition.y), 0, 0.02, 0.20);
+      const s = Math.round(dS * (hS / 100));
+      let hint = s >= 80 ? 'Mouse pas — bahu rileks, siku dekat badan.' : `Geser mouse ${Math.round(dist * 100)} cm mendekati posisi ideal.`;
+      if (hS < 80) hint = 'Mouse melayang! Turunkan hingga menempel ke meja.';
+      return { score: s, status: stat(s), hint };
     }
 
     case 'lamp': {
       const dist = Math.hypot(item.position.x - item.idealPosition.x, item.position.z - item.idealPosition.z);
-      const s = grade(dist, 0, 0.10, 0.50);
-      return {
-        score: s, status: stat(s),
-        hint: s >= 80
-          ? 'Pencahayaan dari samping — tidak menyilaukan layar.'
-          : 'Pindahkan lampu ke posisi ideal agar tidak silau.',
-      };
+      const dS = grade(dist, 0, 0.10, 0.50);
+      const hS = grade(Math.abs(item.position.y - item.idealPosition.y), 0, 0.02, 0.20);
+      const s = Math.round(dS * (hS / 100));
+      let hint = s >= 80 ? 'Pencahayaan dari samping — tidak menyilaukan layar.' : 'Pindahkan lampu ke posisi ideal agar tidak silau.';
+      if (hS < 80) hint = 'Lampu melayang! Turunkan hingga menempel ke meja.';
+      return { score: s, status: stat(s), hint };
     }
   }
 }
@@ -419,14 +420,17 @@ export function normalizeDeskItems(items: FurnitureItem[]): FurnitureItem[] {
         it.idealRotation.y = chair.rotation.y - 180;
 
         // Hitung Y ideal
+        const desk = items.find(i => i.type === 'desk');
+        const dY = desk ? deskSurfaceY(desk) : IDEAL.deskSurface;
+
         if (it.type === 'desk') {
           it.idealPosition.y = IDEAL.deskSurface - it.scale.y / 2;
         } else if (it.type === 'monitor') {
           it.idealPosition.y = IDEAL.chairSeat + IDEAL.monitorEyeOffset;
         } else if (it.type === 'keyboard' || it.type === 'mouse') {
-          it.idealPosition.y = IDEAL.deskSurface + it.scale.y / 2;
+          it.idealPosition.y = dY + it.scale.y / 2 + 0.005;
         } else if (it.type === 'lamp') {
-          it.idealPosition.y = IDEAL.deskSurface + it.scale.y / 2 + 0.01;
+          it.idealPosition.y = dY + it.scale.y / 2 + 0.01;
         }
       }
     }

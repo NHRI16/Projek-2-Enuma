@@ -349,36 +349,144 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
 
   /* ── Ruangan ── */
   function room(dark: boolean) {
-    const wall: V3 = dark ? [0.20,0.21,0.26] : [0.86,0.84,0.80];
-    const wall2: V3 = dark ? [0.17,0.18,0.23] : [0.82,0.80,0.77];
+    const wall: V3  = dark ? [0.20,0.21,0.26] : [0.88,0.86,0.82];
+    const wall2: V3 = dark ? [0.17,0.18,0.23] : [0.84,0.82,0.79];
+    const wallB: V3 = dark ? [0.18,0.19,0.24] : [0.85,0.83,0.80]; // dinding belakang (z=+4)
     const floor: V3 = dark ? [0.16,0.16,0.19] : [0.42,0.36,0.31];
+    const trim: V3  = dark ? [0.28,0.29,0.34] : [0.96,0.94,0.92];
+    const moldC: V3 = dark ? [0.24,0.25,0.30] : [0.78,0.76,0.73];
 
+    // ── Lantai dengan ubin ──
     draw('cube', mul(T(0,-0.01,0), S(10,0.02,10)), floor);
     for (let x = -4; x <= 4; x++) draw('cube', mul(T(x,0.002,0), S(0.012,0.004,10)), shade(floor,0.82));
     for (let z = -4; z <= 4; z++) draw('cube', mul(T(0,0.002,z), S(10,0.004,0.012)), shade(floor,0.82));
 
+    // ── 4 Dinding Penuh ──
+    // Depan (z = -4)
     draw('cube', mul(T(0,1.5,-4), S(10,3,0.1)), wall);
+    // Belakang (z = +4)  ← dulunya kosong/terlihat seperti langit
+    draw('cube', mul(T(0,1.5, 4), S(10,3,0.1)), wallB);
+    // Kiri (x = -4)
     draw('cube', mul(T(-4,1.5,0), S(0.1,3,10)), wall2);
-    draw('cube', mul(T(4,1.5,0), S(0.1,3,10)), wall2);
+    // Kanan (x = +4)
+    draw('cube', mul(T( 4,1.5,0), S(0.1,3,10)), wall2);
+    // Plafon
     draw('cube', mul(T(0,3.0,0), S(10,0.06,10)), dark ? [0.14,0.15,0.19] : [0.93,0.92,0.90]);
-    // skirting
-    draw('cube', mul(T(0,0.05,-3.94), S(10,0.1,0.03)), shade(wall,0.75));
 
-    // jendela
-    draw('cube', mul(T(2.1,1.75,-3.95), S(1.5,1.05,0.02)), dark ? [0.12,0.16,0.28] : [0.62,0.79,0.94], dark?0.3:0.65);
-    draw('cube', mul(T(2.1,1.75,-3.93), S(1.6,1.15,0.02)), [0.95,0.95,0.96]);
-    draw('cube', mul(T(2.1,1.75,-3.96), S(0.03,1.05,0.01)), [0.9,0.9,0.92]);
-    draw('cube', mul(T(2.1,1.75,-3.96), S(1.5,0.03,0.01)), [0.9,0.9,0.92]);
+    // ── Lis / Skirting Board (semua sisi) ──
+    draw('cube', mul(T(0,  0.05,-3.94), S(10,0.10,0.03)), shade(wall,0.75));  // depan
+    draw('cube', mul(T(0,  0.05, 3.94), S(10,0.10,0.03)), shade(wallB,0.75)); // belakang
+    draw('cube', mul(T(-3.94,0.05,0), S(0.03,0.10,10)), shade(wall2,0.75));   // kiri
+    draw('cube', mul(T( 3.94,0.05,0), S(0.03,0.10,10)), shade(wall2,0.75));   // kanan
 
-    // lampu plafon
-    draw('cube', mul(T(0,2.93,-1.2), S(1.1,0.06,0.28)), [1,0.98,0.92], 0.9);
-    draw('cube', mul(T(0,2.97,-1.2), S(1.2,0.04,0.34)), [0.8,0.8,0.84]);
+    // ── Crown Molding / Lis Plafon (semua sisi) ──
+    draw('cube', mul(T(0,  2.94,-3.94), S(10,0.06,0.04)), moldC); // depan
+    draw('cube', mul(T(0,  2.94, 3.94), S(10,0.06,0.04)), moldC); // belakang
+    draw('cube', mul(T(-3.94,2.94,0), S(0.04,0.06,10)), moldC);   // kiri
+    draw('cube', mul(T( 3.94,2.94,0), S(0.04,0.06,10)), moldC);   // kanan
 
-    // stopkontak dinding
+    // ── Panel Chair Rail / List Tengah Dinding (semua sisi) ──
+    // Depan
+    draw('cube', mul(T(0,1.0,-3.94), S(10,0.04,0.025)), shade(wall,0.80));
+    // Belakang
+    draw('cube', mul(T(0,1.0, 3.94), S(10,0.04,0.025)), shade(wallB,0.80));
+    // Kiri
+    draw('cube', mul(T(-3.94,1.0,0), S(0.025,0.04,10)), shade(wall2,0.80));
+    // Kanan
+    draw('cube', mul(T( 3.94,1.0,0), S(0.025,0.04,10)), shade(wall2,0.80));
+
+    // ══════════════════════════════════════════
+    // ── JENDELA KIRI (dinding x = -4) ──
+    // ══════════════════════════════════════════
+    const winGlassL: V3 = dark ? [0.10,0.18,0.35] : [0.60,0.82,0.96];
+    // Kaca jendela
+    draw('cube', mul(T(-3.94,1.78,-0.5), S(0.04,1.10,1.40)), winGlassL, dark?0.35:0.60);
+    // Bingkai luar jendela
+    draw('cube', mul(T(-3.93,1.78,-0.5), S(0.03,1.22,1.52)), trim);
+    // Pembagi tengah (vertikal & horizontal)
+    draw('cube', mul(T(-3.945,1.78,-0.5), S(0.025,1.10,0.025)), [0.92,0.90,0.88]); // vertikal tengah
+    draw('cube', mul(T(-3.945,1.78,-0.5), S(0.025,0.025,1.40)), [0.92,0.90,0.88]); // horizontal tengah
+    // Ambang bawah jendela (windowsill)
+    draw('cube', mul(T(-3.92,1.20,-0.5), S(0.07,0.04,1.60)), trim);
+    // Ambang atas
+    draw('cube', mul(T(-3.92,2.36,-0.5), S(0.05,0.04,1.56)), trim);
+    // Kusen kiri-kanan
+    draw('cube', mul(T(-3.92,1.78,-1.30), S(0.05,1.18,0.04)), trim);
+    draw('cube', mul(T(-3.92,1.78, 0.30), S(0.05,1.18,0.04)), trim);
+    // Tirai kiri (gorden)
+    for (let i = 0; i < 5; i++) {
+      const tz = -1.32 + i*0.04;
+      draw('cube', mul(T(-3.92,1.9, tz), S(0.03,1.6,0.028)), dark ? [0.28,0.22,0.38] : [0.72,0.58,0.82]);
+    }
+    // Tirai kanan (gorden)
+    for (let i = 0; i < 5; i++) {
+      const tz = 0.32 + i*0.04;
+      draw('cube', mul(T(-3.92,1.9, tz), S(0.03,1.6,0.028)), dark ? [0.28,0.22,0.38] : [0.72,0.58,0.82]);
+    }
+    // Rel tirai
+    draw('cube', mul(T(-3.92,2.70,-0.5), S(0.04,0.04,1.80)), [0.55,0.45,0.38]);
+
+    // ══════════════════════════════════════════
+    // ── JENDELA KANAN (dinding x = +4) ──
+    // ══════════════════════════════════════════
+    const winGlassR: V3 = dark ? [0.10,0.18,0.35] : [0.60,0.82,0.96];
+    // Kaca jendela
+    draw('cube', mul(T( 3.94,1.78, 0.5), S(0.04,1.10,1.40)), winGlassR, dark?0.35:0.60);
+    // Bingkai luar
+    draw('cube', mul(T( 3.93,1.78, 0.5), S(0.03,1.22,1.52)), trim);
+    // Pembagi tengah
+    draw('cube', mul(T( 3.945,1.78, 0.5), S(0.025,1.10,0.025)), [0.92,0.90,0.88]);
+    draw('cube', mul(T( 3.945,1.78, 0.5), S(0.025,0.025,1.40)), [0.92,0.90,0.88]);
+    // Ambang bawah
+    draw('cube', mul(T( 3.92,1.20, 0.5), S(0.07,0.04,1.60)), trim);
+    // Ambang atas
+    draw('cube', mul(T( 3.92,2.36, 0.5), S(0.05,0.04,1.56)), trim);
+    // Kusen kiri-kanan
+    draw('cube', mul(T( 3.92,1.78,-0.30), S(0.05,1.18,0.04)), trim);
+    draw('cube', mul(T( 3.92,1.78, 1.30), S(0.05,1.18,0.04)), trim);
+    // Tirai kiri
+    for (let i = 0; i < 5; i++) {
+      const tz = -0.32 - i*0.04;
+      draw('cube', mul(T( 3.92,1.9, tz), S(0.03,1.6,0.028)), dark ? [0.28,0.22,0.38] : [0.72,0.58,0.82]);
+    }
+    // Tirai kanan
+    for (let i = 0; i < 5; i++) {
+      const tz = 1.32 + i*0.04;
+      draw('cube', mul(T( 3.92,1.9, tz), S(0.03,1.6,0.028)), dark ? [0.28,0.22,0.38] : [0.72,0.58,0.82]);
+    }
+    // Rel tirai
+    draw('cube', mul(T( 3.92,2.70, 0.5), S(0.04,0.04,1.80)), [0.55,0.45,0.38]);
+
+    // ══════════════════════════════════════════
+    // ── HIASAN DINDING DEPAN (z = -4) ──
+    // ══════════════════════════════════════════
+    // Poster / Bingkai Ergonomi
+    draw('cube', mul(T(-1.6,1.75,-3.93), S(0.9,0.66,0.02)), [0.96,0.96,0.94]);
+    draw('cube', mul(T(-1.6,1.75,-3.92), S(0.96,0.72,0.01)), [0.25,0.28,0.35]);
+    draw('cube', mul(T(-1.6,1.95,-3.915), S(0.7,0.06,0.005)), [0.30,0.55,0.85], 0.6);
+    for (let i = 0; i < 3; i++) draw('cube', mul(T(-1.85+i*0.25,1.68,-3.915), S(0.16,0.22,0.005)), [0.55,0.70,0.85], 0.4);
+    // Bingkai foto dekoratif kecil (kanan bawah poster)
+    draw('cube', mul(T(-0.55,1.55,-3.93), S(0.38,0.50,0.02)), [0.28,0.28,0.32]);
+    draw('cube', mul(T(-0.55,1.55,-3.92), S(0.34,0.46,0.01)), [0.55,0.72,0.85], 0.5);
+    draw('cube', mul(T(-0.55,1.55,-3.915), S(0.20,0.28,0.005)), [0.22,0.38,0.62], 0.7);
+    // Bingkai foto ke-2
+    draw('cube', mul(T(-2.6,1.60,-3.93), S(0.44,0.56,0.02)), [0.32,0.28,0.24]);
+    draw('cube', mul(T(-2.6,1.60,-3.92), S(0.40,0.52,0.01)), [0.75,0.80,0.72], 0.5);
+    draw('cube', mul(T(-2.6,1.60,-3.915), S(0.26,0.34,0.005)), [0.28,0.52,0.38], 0.6);
+    // Jam dinding
+    draw('cyl', mul(T(0.8,2.10,-3.93), S(0.38,0.03,0.38)), [0.94,0.92,0.90]);
+    draw('cyl', mul(T(0.8,2.11,-3.92), S(0.32,0.02,0.32)), dark ? [0.15,0.15,0.18] : [0.98,0.97,0.95]);
+    draw('cube', mul(T(0.8,2.11,-3.915), S(0.016,0.12,0.007)), [0.25,0.25,0.30]); // jarum menit
+    draw('cube', mul(T(0.806,2.135,-3.915), S(0.012,0.09,0.007)), [0.80,0.20,0.20]); // jarum jam
+    draw('cyl', mul(T(0.8,2.11,-3.914), S(0.028,0.02,0.028)), [0.40,0.40,0.45]); // poros
+    // Stopkontak dinding
     draw('cube', mul(T(1.15,0.28,-3.93), S(0.11,0.14,0.02)), [0.92,0.92,0.90]);
     draw('cube', mul(T(1.15,0.28,-3.92), S(0.05,0.06,0.01)), [0.35,0.35,0.38]);
 
-    // rak buku
+    // ══════════════════════════════════════════
+    // ── HIASAN DINDING KIRI (x = -4) ──
+    // ══════════════════════════════════════════
+    // Rak buku (sudah ada, dipercantik)
     draw('cube', mul(T(-3.86,1.15,-2), S(0.06,1.9,0.75)), [0.42,0.28,0.19]);
     for (let s = 0; s < 4; s++) {
       draw('cube', mul(T(-3.72,0.45+s*0.44,-2), S(0.26,0.025,0.75)), [0.50,0.34,0.22]);
@@ -387,22 +495,126 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
         draw('cube', mul(T(-3.70,0.55+s*0.44,-2.28+b*0.13), S(0.14,0.18,0.055)), bc);
       }
     }
-    // poster ergonomi
-    draw('cube', mul(T(-1.6,1.75,-3.93), S(0.9,0.66,0.02)), [0.96,0.96,0.94]);
-    draw('cube', mul(T(-1.6,1.75,-3.92), S(0.96,0.72,0.01)), [0.25,0.28,0.35]);
-    draw('cube', mul(T(-1.6,1.95,-3.915), S(0.7,0.06,0.005)), [0.30,0.55,0.85], 0.6);
-    for (let i = 0; i < 3; i++) draw('cube', mul(T(-1.85+i*0.25,1.68,-3.915), S(0.16,0.22,0.005)), [0.55,0.70,0.85], 0.4);
+    // Bingkai seni di dinding kiri (atas jendela, dekat penggaris)
+    draw('cube', mul(T(-3.94,2.20, 1.5), S(0.03,0.48,0.62)), [0.28,0.26,0.22]);
+    draw('cube', mul(T(-3.93,2.20, 1.5), S(0.02,0.44,0.58)), [0.72,0.82,0.68], 0.4);
+    draw('cube', mul(T(-3.925,2.20, 1.5), S(0.01,0.28,0.36)), [0.30,0.58,0.42], 0.6);
+    // Bingkai seni ke-2 (bawah penggaris)
+    draw('cube', mul(T(-3.94,1.45, 2.2), S(0.03,0.54,0.38)), [0.32,0.26,0.22]);
+    draw('cube', mul(T(-3.93,1.45, 2.2), S(0.02,0.50,0.34)), [0.92,0.90,0.88]);
+    draw('cube', mul(T(-3.925,1.45, 2.2), S(0.01,0.30,0.20)), [0.55,0.42,0.28], 0.5);
+    // Rak kecil dekoratif di kiri atas
+    draw('cube', mul(T(-3.87,2.40, 2.8), S(0.05,0.04,0.60)), [0.48,0.32,0.22]);
+    draw('cube', mul(T(-3.87,2.20, 2.8), S(0.05,0.36,0.04)), [0.48,0.32,0.22]);
+    // Dekorasi di atas rak kecil
+    draw('cyl', mul(T(-3.85,2.46, 2.65), S(0.08,0.12,0.08)), [0.55,0.33,0.22]); // pot kecil
+    draw('cyl', mul(T(-3.85,2.54, 2.65), S(0.09,0.04,0.09)), [0.28,0.20,0.14]);
+    draw('cyl', mul(T(-3.85,2.60, 2.65), S(0.06,0.10,0.06)), [0.22,0.52,0.28]); // tanaman kecil
+    draw('cube', mul(T(-3.85,2.46, 3.00), S(0.06,0.14,0.06)), [0.35,0.28,0.22]); // buku kecil
+    draw('cube', mul(T(-3.85,2.46, 3.06), S(0.06,0.16,0.06)), [0.55,0.42,0.25]);
 
-    // tanaman
+    // ══════════════════════════════════════════
+    // ── HIASAN DINDING KANAN (x = +4) ──
+    // ══════════════════════════════════════════
+    // Papan pengumuman / pin board
+    draw('cube', mul(T( 3.93,1.85,-2.5), S(0.03,0.72,1.02)), [0.52,0.36,0.22]);
+    draw('cube', mul(T( 3.92,1.85,-2.5), S(0.02,0.68,0.98)), [0.70,0.58,0.40]);
+    // Pin di papan
+    for (let pi = 0; pi < 4; pi++) {
+      const pz = -2.9 + pi*0.22;
+      draw('cyl', mul(T( 3.915,1.95, pz), S(0.02,0.03,0.02)), [[0.85,0.20,0.20],[0.20,0.55,0.85],[0.85,0.72,0.20],[0.55,0.20,0.85]][pi] as V3, 0.7);
+      draw('cube', mul(T( 3.91,1.95-0.04, pz), S(0.01,0.08,0.12)), shade([0.96,0.94,0.88], 1.0));
+    }
+    // Kalender dinding
+    draw('cube', mul(T( 3.93,1.30,-2.5), S(0.03,0.42,0.34)), [0.28,0.28,0.32]);
+    draw('cube', mul(T( 3.92,1.30,-2.5), S(0.02,0.38,0.30)), [0.95,0.95,0.98]);
+    draw('cube', mul(T( 3.915,1.40,-2.5), S(0.01,0.08,0.28)), [0.28,0.45,0.82], 0.6);
+    for (let ci = 0; ci < 3; ci++) for (let cj = 0; cj < 5; cj++)
+      draw('cube', mul(T( 3.912,1.24+ci*0.06,-2.62+cj*0.06), S(0.01,0.035,0.04)), [0.60,0.65,0.72]);
+    // Rak apung kecil kanan atas
+    draw('cube', mul(T( 3.87,2.25,-0.8), S(0.05,0.04,0.70)), [0.48,0.32,0.22]);
+    draw('cube', mul(T( 3.87,2.05,-0.8), S(0.05,0.36,0.04)), [0.48,0.32,0.22]);
+    // Dekorasi rak kanan
+    draw('cyl', mul(T( 3.85,2.31,-0.65), S(0.09,0.14,0.09)), [0.62,0.38,0.25]); // vas
+    draw('cyl', mul(T( 3.85,2.39,-0.65), S(0.05,0.08,0.05)), [0.55,0.22,0.18]);
+    for (let i = 0; i < 4; i++) { // bunga kecil
+      const a = i/4*Math.PI*2;
+      draw('cube', mul(mul(T(3.85+Math.cos(a)*0.04, 2.46+((i%2)*0.03), -0.65+Math.sin(a)*0.04), RY(a)), S(0.05,0.10,0.03)), [0.82+((i%2)*0.1), 0.42, 0.55]);
+    }
+    draw('cube', mul(T( 3.85,2.30,-1.10), S(0.06,0.18,0.06)), [0.22,0.36,0.62]); // buku
+    draw('cube', mul(T( 3.85,2.30,-1.18), S(0.06,0.20,0.06)), [0.62,0.28,0.22]);
+    draw('cube', mul(T( 3.85,2.30,-1.26), S(0.06,0.15,0.06)), [0.30,0.55,0.38]);
+    // Cermin / bingkai seni persegi di dinding kanan
+    draw('cube', mul(T( 3.93,1.80, 2.5), S(0.03,0.66,0.50)), [0.55,0.48,0.35]);
+    draw('cube', mul(T( 3.92,1.80, 2.5), S(0.02,0.62,0.46)), dark ? [0.25,0.28,0.38] : [0.82,0.88,0.92], dark?0.2:0.5);
+    // Bingkai geometris di cermin
+    draw('cube', mul(T( 3.915,1.80, 2.5), S(0.01,0.40,0.025)), [0.70,0.65,0.55]);
+    draw('cube', mul(T( 3.915,1.80, 2.5), S(0.01,0.025,0.40)), [0.70,0.65,0.55]);
+
+    // ══════════════════════════════════════════
+    // ── HIASAN DINDING BELAKANG (z = +4) ──
+    // ══════════════════════════════════════════
+    // Panel wainscoting / bingkai besar
+    draw('cube', mul(T(0,0.52, 3.93), S(9.6,0.92,0.04)), shade(wallB, 0.93));
+    // Vertical divider panel
+    for (let pi = -3; pi <= 3; pi++) {
+      if (pi === 0) continue;
+      draw('cube', mul(T(pi*1.2,0.52, 3.935), S(0.04,0.92,0.02)), shade(wallB, 0.82));
+    }
+    // Lis horizontal panel
+    draw('cube', mul(T(0,1.0, 3.94), S(9.6,0.04,0.025)), shade(wallB,0.80));
+    // Bingkai foto besar di tengah
+    draw('cube', mul(T(0, 1.90, 3.93), S(1.20,0.80,0.03)), [0.32,0.28,0.22]);
+    draw('cube', mul(T(0, 1.90, 3.925), S(1.14,0.74,0.02)), [0.88,0.84,0.80], 0.4);
+    draw('cube', mul(T(0, 1.90, 3.92), S(0.90,0.55,0.01)), [0.28,0.42,0.62], 0.6);
+    // Bingkai kiri
+    draw('cube', mul(T(-2.2,1.85, 3.93), S(0.70,0.54,0.03)), [0.28,0.24,0.20]);
+    draw('cube', mul(T(-2.2,1.85, 3.925), S(0.64,0.48,0.02)), [0.80,0.78,0.74], 0.4);
+    draw('cube', mul(T(-2.2,1.85, 3.92), S(0.46,0.32,0.01)), [0.42,0.60,0.48], 0.55);
+    // Bingkai kanan
+    draw('cube', mul(T( 2.2,1.85, 3.93), S(0.70,0.54,0.03)), [0.28,0.24,0.20]);
+    draw('cube', mul(T( 2.2,1.85, 3.925), S(0.64,0.48,0.02)), [0.80,0.78,0.74], 0.4);
+    draw('cube', mul(T( 2.2,1.85, 3.92), S(0.46,0.32,0.01)), [0.62,0.40,0.28], 0.55);
+    // Meja konsol di dinding belakang
+    draw('cube', mul(T(0,0.44, 3.78), S(1.20,0.04,0.40)), [0.48,0.34,0.22]);
+    draw('cube', mul(T(0,0.22, 3.78), S(1.16,0.40,0.36)), shade([0.48,0.34,0.22], 0.80));
+    // Dekorasi di meja konsol
+    draw('cyl', mul(T(-0.35,0.50, 3.76), S(0.12,0.22,0.12)), [0.55,0.33,0.22]);  // vas
+    draw('cyl', mul(T(-0.35,0.61, 3.76), S(0.09,0.02,0.09)), [0.28,0.20,0.14]);
+    for (let i = 0; i < 5; i++) {  // bunga
+      const a = i/5*Math.PI*2;
+      draw('cube', mul(mul(T(-0.35+Math.cos(a)*0.06, 0.66+((i%3)*0.04), 3.76+Math.sin(a)*0.06), RY(a)), S(0.05,0.14,0.03)), [0.85,0.45,0.55]);
+    }
+    draw('cube', mul(T( 0.20,0.50, 3.75), S(0.06,0.20,0.06)), [0.22,0.35,0.62]); // buku kecil
+    draw('cube', mul(T( 0.28,0.50, 3.75), S(0.06,0.18,0.06)), [0.62,0.25,0.22]);
+    draw('cyl', mul(T( 0.45,0.52, 3.75), S(0.08,0.16,0.08)), [0.38,0.38,0.42]);  // lilin
+    draw('cyl', mul(T( 0.45,0.60, 3.75), S(0.02,0.02,0.02)), [1.0,0.85,0.40], 0.9); // nyala lilin
+
+    // ── Lampu Plafon ──
+    draw('cube', mul(T(0,2.93,-1.2), S(1.1,0.06,0.28)), [1,0.98,0.92], 0.9);
+    draw('cube', mul(T(0,2.97,-1.2), S(1.2,0.04,0.34)), [0.8,0.8,0.84]);
+
+    // ── Tanaman sudut ──
     draw('cyl', mul(T(3.4,0.16,-3.4), S(0.30,0.32,0.30)), [0.55,0.33,0.22]);
     draw('cyl', mul(T(3.4,0.33,-3.4), S(0.31,0.04,0.31)), [0.30,0.22,0.16]);
     for (let i = 0; i < 7; i++) {
       const a = i/7*Math.PI*2;
       draw('cube', mul(mul(T(3.4+Math.cos(a)*0.13, 0.52+((i%3)*0.09), -3.4+Math.sin(a)*0.13), RY(a)), S(0.10,0.34,0.05)), [0.20,0.55+((i%3)*0.06),0.24]);
     }
-    // karpet
+    // Tanaman sudut kiri-belakang
+    draw('cyl', mul(T(-3.4,0.16, 3.4), S(0.28,0.30,0.28)), [0.48,0.30,0.20]);
+    draw('cyl', mul(T(-3.4,0.32, 3.4), S(0.29,0.04,0.29)), [0.28,0.20,0.14]);
+    for (let i = 0; i < 6; i++) {
+      const a = i/6*Math.PI*2;
+      draw('cube', mul(mul(T(-3.4+Math.cos(a)*0.11, 0.48+((i%3)*0.08), 3.4+Math.sin(a)*0.11), RY(a)), S(0.09,0.30,0.04)), [0.18,0.50+((i%3)*0.05),0.22]);
+    }
+
+    // ── Karpet ──
     draw('cube', mul(T(0,0.006,-1.1), S(2.6,0.012,2.0)), dark ? [0.22,0.24,0.30] : [0.55,0.58,0.66]);
     draw('cube', mul(T(0,0.010,-1.1), S(2.4,0.012,1.8)), dark ? [0.25,0.27,0.34] : [0.62,0.65,0.72]);
+    // Motif karpet
+    draw('cube', mul(T(0,0.013,-1.1), S(2.2,0.006,0.020)), dark ? [0.30,0.32,0.40] : [0.70,0.72,0.80]);
+    draw('cube', mul(T(0,0.013,-1.1), S(0.020,0.006,1.6)), dark ? [0.30,0.32,0.40] : [0.70,0.72,0.80]);
   }
 
   /* ── PC + kabel (mengikuti posisi objek secara dinamis) ── */

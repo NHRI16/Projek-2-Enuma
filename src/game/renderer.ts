@@ -12,6 +12,10 @@ import {
 import {
   LAMP_NORM_OFFSET, LAMP_WIDTH, LAMP_HEIGHT, LAMP_DEPTH, LAMP_PARTS,
 } from './lampModel';
+import {
+  BOOK_STACK_NORM_OFFSET, BOOK_STACK_WIDTH, BOOK_STACK_HEIGHT, BOOK_STACK_DEPTH,
+  BOOK_STACK_VERTS, BOOK_STACK_INDICES,
+} from './bookStackModel';
 
 export interface RenderWorld {
   camX: number; camY: number; camZ: number; yaw: number; pitch: number;
@@ -68,12 +72,6 @@ const mkRot = (lx: V3, ly: V3, lz: V3): Float32Array => new Float32Array([
   0,     0,     0,     1,
 ]);
 
-/** Transformasi bagian anak: induk(posisi+rotasi) → offset lokal → skala.
- *  Inilah kunci agar objek TIDAK terpotong / tercerai saat diputar. */
-const part = (px: number, py: number, pz: number, rot: number,
-              lx: number, ly: number, lz: number,
-              sx: number, sy: number, sz: number) =>
-  mul(mul(mul(T(px,py,pz), RY(rot)), T(lx,ly,lz)), S(sx,sy,sz));
 
 /* ── Rotation-aware AABB untuk seleksi ── */
 export function pickBox(it: FurnitureItem): { p: V3; h: V3 } {
@@ -197,6 +195,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
   const keyboardPartBufs = makePartBufs(KEYBOARD_PARTS);
   const mousePartBufs = makePartBufs(MOUSE_PARTS);
   const lampPartBufs = makePartBufs(LAMP_PARTS);
+  const bookStackBuf = mkBuf(BOOK_STACK_VERTS, BOOK_STACK_INDICES);
   const cube = mkBuf(cubeV, cubeI);
 
   const seg = 20, cv: number[] = [], ci: number[] = [];
@@ -300,8 +299,6 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     const p = it.position, sc = it.scale;
     const r = (it.rotation.y||0) * Math.PI/180;
     const c = ghost ? [0.25,0.95,0.55] as V3 : hex(it.color);
-    const P = (lx: number, ly: number, lz: number, sx: number, sy: number, sz: number) =>
-      part(p.x, p.y, p.z, r, lx, ly, lz, sx, sy, sz);
 
     switch (it.type) {
       case 'desk': {
@@ -349,17 +346,24 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
           const emis = ghost ? 0 : part.emissive;
           drawBuf(part, monM, partCol, emis);
         }
-        // Penyangga (buku/riser) bila dinaikkan jauh di atas meja
+        // Penyangga tumpukan buku 3D bila monitor dinaikkan di atas meja
         if (!ghost) {
           const standBottom = p.y - sc.y/2 - 0.08;
           const gap = standBottom - deskSurf;
           if (gap > 0.02) {
-            const n = Math.max(1, Math.round(gap / 0.045));
+            const stackHeight = 0.08;
+            const n = Math.max(1, Math.round(gap / stackHeight));
             const hEach = gap / n;
+            const bsx = 0.36 / BOOK_STACK_WIDTH;
+            const bsy = hEach / BOOK_STACK_HEIGHT;
+            const bsz = 0.28 / BOOK_STACK_DEPTH;
+            const normT = T(BOOK_STACK_NORM_OFFSET[0], BOOK_STACK_NORM_OFFSET[1], BOOK_STACK_NORM_OFFSET[2]);
             for (let i = 0; i < n; i++) {
-              const cy = deskSurf + hEach * (i + 0.5) - p.y;
-              const tone: V3 = [[0.62,0.30,0.26],[0.24,0.40,0.30],[0.28,0.34,0.52],[0.58,0.46,0.22]][i % 4] as V3;
-              draw('cube', P(0, cy, 0.02, 0.32 - (i % 2) * 0.02, hEach * 0.88, 0.22 - (i % 2) * 0.015), tone);
+              const cy = deskSurf + i * hEach;
+              const rotJitter = r + ((i % 2 === 0) ? -0.04 : 0.04);
+              const bookM = mul(mul(mul(T(p.x, cy, p.z + 0.01), RY(rotJitter)), S(bsx, bsy, bsz)), normT);
+              const tone: V3 = [[0.65, 0.42, 0.28], [0.28, 0.48, 0.65], [0.38, 0.58, 0.42], [0.72, 0.55, 0.25]][i % 4] as V3;
+              drawBuf(bookStackBuf, bookM, tone);
             }
           }
         }

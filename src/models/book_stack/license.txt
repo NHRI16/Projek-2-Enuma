@@ -1,0 +1,11 @@
+Model Information:
+* title:	Book stack
+* source:	https://sketchfab.com/3d-models/book-stack-60e6d9ccec844cbc8101a6cbcf1aa3b6
+* author:	Jerovdl (https://sketchfab.com/Jerovdl)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Book stack" (https://sketchfab.com/3d-models/book-stack-60e6d9ccec844cbc8101a6cbcf1aa3b6) by Jerovdl (https://sketchfab.com/Jerovdl) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

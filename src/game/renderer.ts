@@ -9,6 +9,9 @@ import {
 import {
   CHAIR_NORM_OFFSET, CHAIR_WIDTH, CHAIR_HEIGHT, CHAIR_DEPTH, CHAIR_PARTS,
 } from './chairModel';
+import {
+  LAMP_NORM_OFFSET, LAMP_WIDTH, LAMP_HEIGHT, LAMP_DEPTH, LAMP_PARTS,
+} from './lampModel';
 
 export interface RenderWorld {
   camX: number; camY: number; camZ: number; yaw: number; pitch: number;
@@ -193,6 +196,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
   const monitorPartBufs = makePartBufs(MONITOR_PARTS);
   const keyboardPartBufs = makePartBufs(KEYBOARD_PARTS);
   const mousePartBufs = makePartBufs(MOUSE_PARTS);
+  const lampPartBufs = makePartBufs(LAMP_PARTS);
   const cube = mkBuf(cubeV, cubeI);
 
   const seg = 20, cv: number[] = [], ci: number[] = [];
@@ -390,11 +394,19 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
         break;
       }
       case 'lamp': {
-        draw('cyl', P(0, -sc.y/2 - 0.008, 0, 0.13, 0.018, 0.13), [0.30,0.31,0.35]);
-        draw('cyl', P(0, 0, 0, 0.022, sc.y, 0.022), [0.42,0.43,0.47]);
-        draw('cyl', P(0.055, sc.y/2 + 0.005, 0, 0.14, 0.022, 0.022), [0.42,0.43,0.47]); // lengan
-        draw('cyl', P(0.115, sc.y/2 - 0.035, 0, 0.13, 0.085, 0.13), c);                 // kap
-        if (!ghost) draw('cyl', P(0.115, sc.y/2 - 0.075, 0, 0.075, 0.015, 0.075), [1,0.96,0.78], 0.95);
+        // ── Full GLTF 3D Articulated Desk Lamp (Matte finish + springs + glowing bulb) ──
+        const lsx    = (sc.x + 0.18) / LAMP_WIDTH;
+        const lsy    = (sc.y + 0.12) / LAMP_HEIGHT;
+        const lsz    = (sc.z + 0.18) / LAMP_DEPTH;
+        const normT  = T(LAMP_NORM_OFFSET[0], LAMP_NORM_OFFSET[1], LAMP_NORM_OFFSET[2]);
+        const lampM  = mul(mul(mul(T(p.x, p.y - sc.y/2, p.z), RY(r)), S(lsx, lsy, lsz)), normT);
+        for (const part of lampPartBufs) {
+          const partCol = ghost
+            ? ([0.25, 0.95, 0.55] as V3)
+            : (part.id === 'lamp_body' ? (it.color === '#E9B949' ? [0.20, 0.20, 0.24] as V3 : c) : part.color);
+          const emis = ghost ? 0 : part.emissive;
+          drawBuf(part, lampM, partCol, emis);
+        }
         break;
       }
     }

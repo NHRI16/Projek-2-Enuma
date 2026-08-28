@@ -218,7 +218,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
   }
 
   /** Draw a raw VBO/IBO pair with the same shader pipeline as draw(). */
-  function drawBuf(db: DeskBuf, m: Float32Array, c: V3, emis = 0) {
+  function drawBuf(db: { vb: WebGLBuffer; ib: WebGLBuffer; n: number }, m: Float32Array, c: V3, emis = 0) {
     gl!.bindBuffer(gl!.ARRAY_BUFFER, db.vb);
     gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, db.ib);
     gl!.enableVertexAttribArray(A.pos); gl!.vertexAttribPointer(A.pos,3,gl!.FLOAT,false,24,0);
@@ -746,7 +746,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     const monBase: V3 = [mon.position.x, mon.position.y - mon.scale.y/2 - 0.16, mon.position.z + 0.02];
     const deskBack: V3 = [mon.position.x, surf - 0.02, desk.position.z - desk.scale.z/2 + 0.04];
     cable(monBase, deskBack, 0.02, cc, 8);
-    cable(deskBack, pcBack, 0.10, cc, 18);
+    cable(deskBack, pcTop, 0.10, cc, 18);
     // kabel keyboard → CPU
     cable([kb.position.x, kb.position.y, kb.position.z - kb.scale.z/2], [deskBack[0]-0.06, deskBack[1], deskBack[2]], 0.05, cc, 16);
     // kabel mouse → CPU

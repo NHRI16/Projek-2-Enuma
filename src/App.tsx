@@ -292,18 +292,19 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
 
   /* ── Ambil objek (Hold mechanic) ── */
   const pickupObject = useCallback((id: string) => {
+    const it = world.current.furniture.find(f => f.id === id);
+    if (it?.type === 'desk') {
+      selectItem('desk');
+      toast('🪵 Meja Kerja — titik 0 ruangan. Gunakan Scroll atau tombol R / T untuk atur tinggi.');
+      return;
+    }
     heldId.current = id;
     world.current.heldId = id;
-    const it = world.current.furniture.find(f => f.id === id);
     if (it) {
       setHeldName(it.name);
-      if (it.type === 'desk') {
-        toast(`🪵 ${it.name} (Titik Acuan) — Scroll mouse untuk atur tinggi meja, klik lagi untuk selesai`);
-      } else {
-        toast(`✋ ${ICON[it.type]} ${it.name} — Klik/tap lagi untuk meletakkan`);
-      }
+      toast(`✋ ${ICON[it.type]} ${it.name} — Klik/tap lagi untuk meletakkan`);
     }
-  }, [toast]);
+  }, [toast, selectItem]);
 
   /* ── Terapkan perubahan (tetap tersedia untuk AdjustCard & keyboard) ── */
   const applyRef = useRef<(a: Action) => void>(() => {});
@@ -326,12 +327,13 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
         case 'rotL': if (it.type !== 'desk') it.rotation.y -= R; break;
         case 'rotR': if (it.type !== 'desk') it.rotation.y += R; break;
       }
-      if (it.type === 'desk') {
-        it.position.x = 0;
-        it.position.z = -1.50;
-      } else {
+      if (it.type !== 'desk') {
         it.position.x = clamp(it.position.x, -1.9, 1.9);
         it.position.z = clamp(it.position.z, -2.6, 0.4);
+      } else {
+        it.position.x = 0;
+        it.position.z = -1.50;
+        it.rotation.y = 0;
       }
       if (it.type === 'desk' && it.position.y !== before) {
         const d = it.position.y - before;
@@ -604,16 +606,11 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
           const isOnDesk = ['monitor','keyboard','mouse','lamp'].includes(it.type);
           const targetY = isOnDesk ? deskY : (it.position.y); // lantai untuk kursi/meja
 
-          if (it.type === 'desk') {
-            // Meja adalah titik acuan tetap (titik 0): X dan Z tidak bergeser, hanya tinggi yang diatur
-            it.position.x = 0;
-            it.position.z = -1.50;
-          } else {
-            const hit = raycastPlane(ori, dir, targetY);
-            if (hit) {
-              it.position.x = hit[0];
-              it.position.z = hit[2];
-            }
+          const hit = raycastPlane(ori, dir, targetY);
+          if (hit) {
+            // Kita sudah set clamp sesuai meja di atas, jadi ini cukup assign posisi raycast sementara
+            it.position.x = hit[0];
+            it.position.z = hit[2];
           }
         }
         if (t - lastLiveUpdate > 100) {
@@ -927,7 +924,7 @@ function AdjustCard({ item, all, onAct, onClose, guide, onToggleGuide }: {
           {item.heightAdjustable && (
             <div className="flex flex-col gap-1">
               <span className="text-[9px] text-slate-500 text-center">TINGGI</span>
-              <div className="flex gap-1">
+              <div className="flex gap-1 justify-center">
                 <Hold onAct={() => onAct('up')} big highlight={m.control === 'height'}>▲</Hold>
                 <Hold onAct={() => onAct('down')} big highlight={m.control === 'height'}>▼</Hold>
               </div>
@@ -955,7 +952,7 @@ function AdjustCard({ item, all, onAct, onClose, guide, onToggleGuide }: {
           )}
           <div className="flex-1 flex flex-col justify-center pl-1">
             <p className="text-[10px] text-slate-400 leading-snug">💡 {item.ergoTip}</p>
-            <p className="text-[9px] text-slate-600 mt-1">Keyboard: R/T · ↑↓←→ · Q/E</p>
+            <p className="text-[9px] text-slate-600 mt-1">{item.type === 'desk' ? 'Keyboard: R/T (naik/turun)' : 'Keyboard: R/T · ↑↓←→ · Q/E'}</p>
           </div>
         </div>
       </div>

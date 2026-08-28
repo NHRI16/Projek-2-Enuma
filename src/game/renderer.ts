@@ -307,7 +307,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
         for (const part of deskPartBufs) {
           const partCol = ghost
             ? ([0.25, 0.95, 0.55] as V3)
-            : (part.id === 'desk_top' ? (shade(c, 0.65)) : part.color);
+            : (part.id === 'desk_top' ? (it.color === '#282A36' ? part.color : c) : part.color);
           const emis = ghost ? 0 : part.emissive;
           drawBuf(part, deskM, partCol, emis);
         }

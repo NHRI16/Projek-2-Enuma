@@ -9,8 +9,8 @@ export const initialFurniture: FurnitureItem[] = [
     type: 'desk',
     position: { x: 0, y: 0.61, z: -1.50 },   // permukaan 63,5 cm → terlalu rendah
     rotation: { x: 0, y: 0, z: 0 },
-    scale: { x: 1.50, y: 0.05, z: 0.75 },
-    color: '#9C6B3F',
+    scale: { x: 1.55, y: 0.05, z: 0.82 },
+    color: '#282A36',
     selected: false,
     idealPosition: { x: 0, y: 0.705, z: -1.50 },
     idealRotation: { x: 0, y: 0, z: 0 },

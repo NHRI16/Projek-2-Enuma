@@ -1,7 +1,7 @@
 import { FurnitureItem } from './types';
 import { deskSurfaceY } from './ergonomics';
 import {
-  DESK_NORM_OFFSET, DESK_WIDTH, DESK_DEPTH, DESK_HEIGHT, DESK_PARTS,
+  DESK_NORM_OFFSET, DESK_WIDTH, DESK_DEPTH, DESK_PARTS,
   MONITOR_NORM_OFFSET, MONITOR_WIDTH, MONITOR_HEIGHT, MONITOR_DEPTH, MONITOR_PARTS,
   KEYBOARD_NORM_OFFSET, KEYBOARD_WIDTH, KEYBOARD_HEIGHT, KEYBOARD_DEPTH, KEYBOARD_PARTS,
   MOUSE_NORM_OFFSET, MOUSE_WIDTH, MOUSE_HEIGHT, MOUSE_DEPTH, MOUSE_PARTS,
@@ -307,7 +307,10 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
         const surf   = p.y + sc.y / 2;          // deskSurfaceY in game coords
         const dsx    = sc.x / DESK_WIDTH;        // x scale to match item width
         const dsz    = sc.z / DESK_DEPTH;        // z scale to match item depth
-        const dsy    = surf / DESK_HEIGHT;       // y scale so surface = surf
+        // DESK_TABLETOP_HEIGHT = 0.899m (tinggi permukaan tabletop dalam GLTF model)
+        // Bukan DESK_HEIGHT (1.529m) yg termasuk semua aksesori di atas meja
+        const DESK_TABLETOP_HEIGHT = 0.899;
+        const dsy    = surf / DESK_TABLETOP_HEIGHT; // y scale so surface = surf
         const normT  = T(DESK_NORM_OFFSET[0], DESK_NORM_OFFSET[1], DESK_NORM_OFFSET[2]);
         const deskM  = mul(mul(mul(T(p.x, 0, p.z), RY(r)), S(dsx, dsy, dsz)), normT);
         for (const part of deskPartBufs) {

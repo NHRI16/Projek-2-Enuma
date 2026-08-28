@@ -292,19 +292,14 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
 
   /* ── Ambil objek (Hold mechanic) ── */
   const pickupObject = useCallback((id: string) => {
-    const it = world.current.furniture.find(f => f.id === id);
-    if (it?.type === 'desk') {
-      selectItem('desk');
-      toast('🪵 Meja Kerja — titik 0 ruangan. Gunakan Scroll atau tombol R / T untuk atur tinggi.');
-      return;
-    }
     heldId.current = id;
     world.current.heldId = id;
+    const it = world.current.furniture.find(f => f.id === id);
     if (it) {
       setHeldName(it.name);
       toast(`✋ ${ICON[it.type]} ${it.name} — Klik/tap lagi untuk meletakkan`);
     }
-  }, [toast, selectItem]);
+  }, [toast]);
 
   /* ── Terapkan perubahan (tetap tersedia untuk AdjustCard & keyboard) ── */
   const applyRef = useRef<(a: Action) => void>(() => {});
@@ -320,21 +315,15 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
       switch (a) {
         case 'up': it.position.y = clamp(it.position.y + H, it.minHeight, it.maxHeight); break;
         case 'down': it.position.y = clamp(it.position.y - H, it.minHeight, it.maxHeight); break;
-        case 'fwd': if (it.type !== 'desk') it.position.z -= M; break;
-        case 'back': if (it.type !== 'desk') it.position.z += M; break;
-        case 'left': if (it.type !== 'desk') it.position.x -= M; break;
-        case 'right': if (it.type !== 'desk') it.position.x += M; break;
-        case 'rotL': if (it.type !== 'desk') it.rotation.y -= R; break;
-        case 'rotR': if (it.type !== 'desk') it.rotation.y += R; break;
+        case 'fwd': it.position.z -= M; break;
+        case 'back': it.position.z += M; break;
+        case 'left': it.position.x -= M; break;
+        case 'right': it.position.x += M; break;
+        case 'rotL': it.rotation.y -= R; break;
+        case 'rotR': it.rotation.y += R; break;
       }
-      if (it.type !== 'desk') {
-        it.position.x = clamp(it.position.x, -1.9, 1.9);
-        it.position.z = clamp(it.position.z, -2.6, 0.4);
-      } else {
-        it.position.x = 0;
-        it.position.z = -1.50;
-        it.rotation.y = 0;
-      }
+      it.position.x = clamp(it.position.x, -1.9, 1.9);
+      it.position.z = clamp(it.position.z, -2.6, 0.4);
       if (it.type === 'desk' && it.position.y !== before) {
         const d = it.position.y - before;
         next.forEach(o => { if (o.type === 'monitor') o.position.y = clamp(o.position.y + d, o.minHeight, o.maxHeight); });
@@ -924,35 +913,31 @@ function AdjustCard({ item, all, onAct, onClose, guide, onToggleGuide }: {
           {item.heightAdjustable && (
             <div className="flex flex-col gap-1">
               <span className="text-[9px] text-slate-500 text-center">TINGGI</span>
-              <div className="flex gap-1 justify-center">
+              <div className="flex gap-1">
                 <Hold onAct={() => onAct('up')} big highlight={m.control === 'height'}>▲</Hold>
                 <Hold onAct={() => onAct('down')} big highlight={m.control === 'height'}>▼</Hold>
               </div>
             </div>
           )}
-          {item.type !== 'desk' && (
-            <>
-              <div className="flex flex-col gap-1">
-                <span className="text-[9px] text-slate-500 text-center">GESER</span>
-                <div className="grid grid-cols-3 gap-0.5" style={{ width: 96 }}>
-                  <span /><Hold onAct={() => onAct('fwd')} highlight={m.control === 'move'}>↑</Hold><span />
-                  <Hold onAct={() => onAct('left')} highlight={m.control === 'move'}>←</Hold>
-                  <Hold onAct={() => onAct('back')} highlight={m.control === 'move'}>↓</Hold>
-                  <Hold onAct={() => onAct('right')} highlight={m.control === 'move'}>→</Hold>
-                </div>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[9px] text-slate-500 text-center">PUTAR</span>
-                <div className="flex gap-1">
-                  <Hold onAct={() => onAct('rotL')} highlight={m.control === 'rotate'}>⟲</Hold>
-                  <Hold onAct={() => onAct('rotR')} highlight={m.control === 'rotate'}>⟳</Hold>
-                </div>
-              </div>
-            </>
-          )}
+          <div className="flex flex-col gap-1">
+            <span className="text-[9px] text-slate-500 text-center">GESER</span>
+            <div className="grid grid-cols-3 gap-0.5" style={{ width: 96 }}>
+              <span /><Hold onAct={() => onAct('fwd')} highlight={m.control === 'move'}>↑</Hold><span />
+              <Hold onAct={() => onAct('left')} highlight={m.control === 'move'}>←</Hold>
+              <Hold onAct={() => onAct('back')} highlight={m.control === 'move'}>↓</Hold>
+              <Hold onAct={() => onAct('right')} highlight={m.control === 'move'}>→</Hold>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[9px] text-slate-500 text-center">PUTAR</span>
+            <div className="flex gap-1">
+              <Hold onAct={() => onAct('rotL')} highlight={m.control === 'rotate'}>⟲</Hold>
+              <Hold onAct={() => onAct('rotR')} highlight={m.control === 'rotate'}>⟳</Hold>
+            </div>
+          </div>
           <div className="flex-1 flex flex-col justify-center pl-1">
             <p className="text-[10px] text-slate-400 leading-snug">💡 {item.ergoTip}</p>
-            <p className="text-[9px] text-slate-600 mt-1">{item.type === 'desk' ? 'Keyboard: R/T (naik/turun)' : 'Keyboard: R/T · ↑↓←→ · Q/E'}</p>
+            <p className="text-[9px] text-slate-600 mt-1">Keyboard: R/T · ↑↓←→ · Q/E</p>
           </div>
         </div>
       </div>

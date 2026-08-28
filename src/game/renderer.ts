@@ -2,7 +2,6 @@ import { FurnitureItem } from './types';
 import { deskSurfaceY } from './ergonomics';
 import {
   DESK_NORM_OFFSET, DESK_WIDTH, DESK_DEPTH, DESK_HEIGHT, DESK_PARTS,
-  MOUSEPAD_NORM_OFFSET, MOUSEPAD_WIDTH, MOUSEPAD_HEIGHT, MOUSEPAD_DEPTH, MOUSEPAD_PARTS,
   MONITOR_NORM_OFFSET, MONITOR_WIDTH, MONITOR_HEIGHT, MONITOR_DEPTH, MONITOR_PARTS,
   KEYBOARD_NORM_OFFSET, KEYBOARD_WIDTH, KEYBOARD_HEIGHT, KEYBOARD_DEPTH, KEYBOARD_PARTS,
   MOUSE_NORM_OFFSET, MOUSE_WIDTH, MOUSE_HEIGHT, MOUSE_DEPTH, MOUSE_PARTS,
@@ -191,7 +190,6 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
   }));
 
   const deskPartBufs = makePartBufs(DESK_PARTS);
-  const mousepadPartBufs = makePartBufs(MOUSEPAD_PARTS);
   const chairPartBufs = makePartBufs(CHAIR_PARTS);
   const monitorPartBufs = makePartBufs(MONITOR_PARTS);
   const keyboardPartBufs = makePartBufs(KEYBOARD_PARTS);
@@ -387,25 +385,12 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
         break;
       }
       case 'mouse': {
-        // ── 3D Gaming Mouse + Attached RGB Mousepad (lembaran mouse mengikuti mouse) ──
-        // 1. Render RGB Mousepad directly under the mouse
-        const psx    = 0.36 / MOUSEPAD_WIDTH;
-        const psy    = 0.008 / MOUSEPAD_HEIGHT;
-        const psz    = 0.32 / MOUSEPAD_DEPTH;
-        const padNormT = T(MOUSEPAD_NORM_OFFSET[0], MOUSEPAD_NORM_OFFSET[1], MOUSEPAD_NORM_OFFSET[2]);
-        const padM   = mul(mul(mul(T(p.x, p.y - sc.y/2, p.z), RY(r)), S(psx, psy, psz)), padNormT);
-        for (const part of mousepadPartBufs) {
-          const partCol = ghost ? ([0.25, 0.95, 0.55] as V3) : part.color;
-          const emis = ghost ? 0 : part.emissive;
-          drawBuf(part, padM, partCol, emis);
-        }
-
-        // 2. Render 3D Gaming Mouse on top of the pad
+        // ── GLTF 3D Gaming Mouse (ergonomic body + RGB lighting) ──
         const msx    = sc.x / MOUSE_WIDTH;
         const msy    = (sc.y + 0.01) / MOUSE_HEIGHT;
         const msz    = sc.z / MOUSE_DEPTH;
         const normT  = T(MOUSE_NORM_OFFSET[0], MOUSE_NORM_OFFSET[1], MOUSE_NORM_OFFSET[2]);
-        const mouseM = mul(mul(mul(T(p.x, p.y - sc.y/2 + 0.006, p.z), RY(r)), S(msx, msy, msz)), normT);
+        const mouseM = mul(mul(mul(T(p.x, p.y - sc.y/2, p.z), RY(r)), S(msx, msy, msz)), normT);
         for (const part of mousePartBufs) {
           const partCol = ghost ? ([0.25, 0.95, 0.55] as V3) : part.color;
           const emis = ghost ? 0 : part.emissive;

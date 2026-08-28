@@ -13,9 +13,8 @@ import {
   LAMP_NORM_OFFSET, LAMP_WIDTH, LAMP_HEIGHT, LAMP_DEPTH, LAMP_PARTS,
 } from './lampModel';
 import {
-  BOOK_STACK_NORM_OFFSET, BOOK_STACK_WIDTH, BOOK_STACK_HEIGHT, BOOK_STACK_DEPTH,
-  BOOK_STACK_VERTS, BOOK_STACK_INDICES,
-} from './bookStackModel';
+  BOOKS_NORM_OFFSET, BOOKS_WIDTH, BOOKS_HEIGHT, BOOKS_DEPTH, BOOKS_PARTS,
+} from './booksModel';
 
 export interface RenderWorld {
   camX: number; camY: number; camZ: number; yaw: number; pitch: number;
@@ -71,6 +70,7 @@ const mkRot = (lx: V3, ly: V3, lz: V3): Float32Array => new Float32Array([
   lz[0], lz[1], lz[2], 0,
   0,     0,     0,     1,
 ]);
+
 
 
 /* ── Rotation-aware AABB untuk seleksi ── */
@@ -195,7 +195,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
   const keyboardPartBufs = makePartBufs(KEYBOARD_PARTS);
   const mousePartBufs = makePartBufs(MOUSE_PARTS);
   const lampPartBufs = makePartBufs(LAMP_PARTS);
-  const bookStackBuf = mkBuf(BOOK_STACK_VERTS, BOOK_STACK_INDICES);
+  const booksPartBufs = makePartBufs(BOOKS_PARTS);
   const cube = mkBuf(cubeV, cubeI);
 
   const seg = 20, cv: number[] = [], ci: number[] = [];
@@ -300,6 +300,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     const r = (it.rotation.y||0) * Math.PI/180;
     const c = ghost ? [0.25,0.95,0.55] as V3 : hex(it.color);
 
+
     switch (it.type) {
       case 'desk': {
         // ── Full GLTF Low-Poly Gaming Desk Setup ─────────────────────────────
@@ -346,24 +347,24 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
           const emis = ghost ? 0 : part.emissive;
           drawBuf(part, monM, partCol, emis);
         }
-        // Penyangga tumpukan buku 3D bila monitor dinaikkan di atas meja
+        // ── 3D Harry Potter Book Stack (Riser bila monitor dinaikkan di atas meja) ──
         if (!ghost) {
           const standBottom = p.y - sc.y/2 - 0.08;
           const gap = standBottom - deskSurf;
           if (gap > 0.02) {
-            const stackHeight = 0.08;
-            const n = Math.max(1, Math.round(gap / stackHeight));
-            const hEach = gap / n;
-            const bsx = 0.36 / BOOK_STACK_WIDTH;
-            const bsy = hEach / BOOK_STACK_HEIGHT;
-            const bsz = 0.28 / BOOK_STACK_DEPTH;
-            const normT = T(BOOK_STACK_NORM_OFFSET[0], BOOK_STACK_NORM_OFFSET[1], BOOK_STACK_NORM_OFFSET[2]);
-            for (let i = 0; i < n; i++) {
-              const cy = deskSurf + i * hEach;
-              const rotJitter = r + ((i % 2 === 0) ? -0.04 : 0.04);
-              const bookM = mul(mul(mul(T(p.x, cy, p.z + 0.01), RY(rotJitter)), S(bsx, bsy, bsz)), normT);
-              const tone: V3 = [[0.65, 0.42, 0.28], [0.28, 0.48, 0.65], [0.38, 0.58, 0.42], [0.72, 0.55, 0.25]][i % 4] as V3;
-              drawBuf(bookStackBuf, bookM, tone);
+            const numStacks = Math.max(1, Math.round(gap / 0.12));
+            const stackH = gap / numStacks;
+            const sx = 0.28 / BOOKS_WIDTH;
+            const sy = stackH / BOOKS_HEIGHT;
+            const sz = 0.22 / BOOKS_DEPTH;
+            const normT = T(BOOKS_NORM_OFFSET[0], BOOKS_NORM_OFFSET[1], BOOKS_NORM_OFFSET[2]);
+            for (let i = 0; i < numStacks; i++) {
+              const stackY = deskSurf + i * stackH;
+              const stackRot = r + (i % 2 === 1 ? 0.04 : -0.02);
+              const stackM = mul(mul(mul(T(p.x, stackY, p.z + 0.02), RY(stackRot)), S(sx, sy, sz)), normT);
+              for (const part of booksPartBufs) {
+                drawBuf(part, stackM, part.color, part.emissive);
+              }
             }
           }
         }

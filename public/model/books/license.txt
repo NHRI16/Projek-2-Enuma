@@ -1,0 +1,11 @@
+Model Information:
+* title:	Harry Potter Books Stack
+* source:	https://sketchfab.com/3d-models/harry-potter-books-stack-b08a7135cad84e0ca222a8cff075109b
+* author:	Milkislegit (https://sketchfab.com/8053498054380548)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Harry Potter Books Stack" (https://sketchfab.com/3d-models/harry-potter-books-stack-b08a7135cad84e0ca222a8cff075109b) by Milkislegit (https://sketchfab.com/8053498054380548) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

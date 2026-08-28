@@ -44,9 +44,9 @@ export const initialFurniture: FurnitureItem[] = [
     scale: { x: 0.58, y: 0.35, z: 0.03 },
     color: '#1B1B1F',
     selected: false,
-    idealPosition: { x: 0, y: 1.05, z: -1.68 },
+    idealPosition: { x: 0, y: 1.07, z: -1.42 },
     idealRotation: { x: 0, y: 0, z: 0 },
-    tolerancePos: 0.08, toleranceRot: 8,
+    tolerancePos: 0.06, toleranceRot: 8,
     heightAdjustable: true, minHeight: 0.85, maxHeight: 1.40,
     ergoTip: 'Tepi atas layar sejajar mata, jarak 50–70 cm.',
     ergoUnit: 'cm',
@@ -55,48 +55,48 @@ export const initialFurniture: FurnitureItem[] = [
     id: 'keyboard',
     name: 'Keyboard',
     type: 'keyboard',
-    position: { x: 0, y: 0.645, z: -1.45 },  // terlalu jauh dari tepi meja (terlalu dekat monitor)
+    position: { x: 0, y: 0.645, z: -1.40 },  // terlalu jauh dari tepi meja
     rotation: { x: 0, y: 0, z: 0 },
     scale: { x: 0.44, y: 0.018, z: 0.15 },
     color: '#26262B',
     selected: false,
-    idealPosition: { x: 0, y: 0.739, z: -1.25 }, // 16 cm dari tepi depan meja (di depan kursi)
+    idealPosition: { x: 0, y: 0.74, z: -1.005 },
     idealRotation: { x: 0, y: 0, z: 0 },
-    tolerancePos: 0.08, toleranceRot: 10,
+    tolerancePos: 0.05, toleranceRot: 5,
     heightAdjustable: false, minHeight: 0.6, maxHeight: 0.9,
-    ergoTip: 'Pergelangan tangan lurus, siku 90°, 10–15 cm dari tepi meja.',
+    ergoTip: 'Pergelangan tangan lurus, siku 90°, 10–15 cm dari tepi.',
     ergoUnit: 'cm',
   },
   {
     id: 'mouse',
     name: 'Mouse',
     type: 'mouse',
-    position: { x: 0.45, y: 0.648, z: -1.45 }, // terlalu jauh dari keyboard
+    position: { x: 0.55, y: 0.648, z: -1.40 }, // terlalu jauh dari keyboard
     rotation: { x: 0, y: 0, z: 0 },
     scale: { x: 0.062, y: 0.028, z: 0.105 },
     color: '#1F1F24',
     selected: false,
-    idealPosition: { x: 0.32, y: 0.744, z: -1.25 }, // di samping kanan keyboard, dekat tepi depan meja
+    idealPosition: { x: 0.28, y: 0.74, z: -1.005 },
     idealRotation: { x: 0, y: 0, z: 0 },
-    tolerancePos: 0.09, toleranceRot: 15,
+    tolerancePos: 0.06, toleranceRot: 15,
     heightAdjustable: false, minHeight: 0.6, maxHeight: 0.9,
-    ergoTip: 'Mouse tepat di samping kanan keyboard, bahu tetap rileks.',
+    ergoTip: 'Mouse tepat di samping keyboard, bahu tetap rileks.',
     ergoUnit: 'cm',
   },
   {
     id: 'lamp',
     name: 'Lampu Meja',
     type: 'lamp',
-    position: { x: 0.10, y: 0.89, z: -1.40 }, // masih di tengah → silau
+    position: { x: 0.10, y: 0.79, z: -1.72 }, // masih di tengah → silau
     rotation: { x: 0, y: 0, z: 0 },
     scale: { x: 0.05, y: 0.30, z: 0.05 },
     color: '#E9B949',
     selected: false,
-    idealPosition: { x: 0.55, y: 0.88, z: -1.45 }, // di sisi kanan meja
+    idealPosition: { x: 0.55, y: 0.89, z: -1.42 }, // kanan pemain (saat kursi 180°, +X = kanan pemain)
     idealRotation: { x: 0, y: 0, z: 0 },
-    tolerancePos: 0.15, toleranceRot: 30,
+    tolerancePos: 0.12, toleranceRot: 30,
     heightAdjustable: false, minHeight: 0.6, maxHeight: 1.1,
-    ergoTip: 'Cahaya dari samping kanan — tidak menyilaukan layar dan menerangi meja.',
+    ergoTip: 'Cahaya dari samping kanan, bukan dari depan/belakang layar.',
     ergoUnit: 'cm',
   },
 ];

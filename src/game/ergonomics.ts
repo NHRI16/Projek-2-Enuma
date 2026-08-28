@@ -22,11 +22,11 @@ export const IDEAL = {
    Rotasi kursi (rotation.y) mengubah lokal → dunia.
    ═══════════════════════════════════════════════════════════ */
 const CHAIR_LOCAL: Record<string, { x: number; z: number }> = {
-  desk:     { x:  0,     z: 0.72 },  // -0.78 - 0.72 = -1.50 (titik 0 meja)
-  monitor:  { x:  0,     z: 0.90 },  // -0.78 - 0.90 = -1.68 (bagian belakang meja)
-  keyboard: { x:  0,     z: 0.47 },  // -0.78 - 0.47 = -1.25 (16 cm dari tepi depan meja)
-  mouse:    { x: -0.32,  z: 0.47 },  // 32 cm ke kanan pemain, sejajar keyboard di tepi depan meja
-  lamp:     { x: -0.55,  z: 0.67 },  // 55 cm ke kanan pemain, di sisi kanan meja kerja
+  desk:     { x:  0,     z: 0.72  },  // 72 cm di depan kursi
+  monitor:  { x:  0,     z: 0.64  },  // 64 cm di depan kursi
+  keyboard: { x:  0,     z: 0.495 },  // 49.5 cm di depan kursi (di atas meja)
+  mouse:    { x: -0.35,  z: 0.495 },  // 35 cm ke kanan pemain
+  lamp:     { x: -0.55,  z: 0.70  },  // 55 cm ke kanan pemain — tidak silau layar
 };
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -167,12 +167,20 @@ export function getItemScore(item: FurnitureItem, _all: FurnitureItem[]): ItemSc
       const surf = deskSurfaceY(item);
       const idealSurf = item.idealPosition.y + item.scale.y / 2;
       const hS = grade(surf, idealSurf, 0.025, 0.14);
+      const dist = Math.hypot(item.position.x - item.idealPosition.x, item.position.z - item.idealPosition.z);
+      const xzS = grade(dist, 0, 0.08, 0.40);
+      const rS = grade(angleDiff(item.rotation.y, item.idealRotation.y), 0, 5, 40);
+      const s = Math.round(hS * 0.45 + xzS * 0.35 + rS * 0.20);
       const d = Math.round((idealSurf - surf) * 100);
-      let hint = 'Tinggi meja pas — permukaan meja sejajar siku saat duduk.';
+      let hint = 'Tinggi, posisi & arah meja pas.';
       if (hS < 80) {
-        hint = d > 0 ? `Naikkan meja ${d} cm lagi agar sejajar siku.` : `Turunkan meja ${-d} cm lagi agar siku 90°.`;
+        hint = d > 0 ? `Naikkan meja ${d} cm lagi.` : `Turunkan meja ${-d} cm lagi.`;
+      } else if (xzS < 80) {
+        hint = `Geser meja ${Math.round(dist * 100)} cm mendekati panduan (bayangan hijau) di depan kursi.`;
+      } else if (rS < 80) {
+        hint = `Putar meja sejajar dengan kursi (Q/E).`;
       }
-      return { score: hS, status: stat(hS), hint };
+      return { score: s, status: stat(s), hint };
     }
 
     case 'monitor': {
@@ -197,16 +205,13 @@ export function getItemScore(item: FurnitureItem, _all: FurnitureItem[]): ItemSc
 
     case 'keyboard': {
       const dist = Math.hypot(item.position.x - item.idealPosition.x, item.position.z - item.idealPosition.z);
-      const dS = grade(dist, 0, 0.08, 0.28);   // 8 cm perfect zone
-      const rS = grade(angleDiff(item.rotation.y, item.idealRotation.y), 0, 10, 45);
-      const hS = grade(Math.abs(item.position.y - item.idealPosition.y), 0, 0.04, 0.20);
-      const posScore = Math.round(dS * 0.70 + rS * 0.30);
-      const s = hS >= 70 ? posScore : Math.round(posScore * (hS / 100));
-      let hint = 'Keyboard pas — dekat tepi depan meja, pergelangan lurus.';
-      if (hS < 70) {
-        hint = 'Keyboard melayang! Turunkan hingga menempel ke meja (R/T).';
-      } else if (dS < 80) {
-        hint = `Geser keyboard ${Math.round(dist * 100)} cm mendekati tepi depan meja di depan kursi (bayangan hijau).`;
+      const dS = grade(dist, 0, 0.04, 0.25);
+      const rS = grade(angleDiff(item.rotation.y, item.idealRotation.y), 0, 5, 40);
+      // Keyboard otomatis snap ke permukaan meja — hanya cek XZ + rotasi
+      const s = Math.round(dS * 0.70 + rS * 0.30);
+      let hint = 'Keyboard pas — pergelangan tangan lurus.';
+      if (dS < 80) {
+        hint = `Geser keyboard ${Math.round(dist * 100)} cm mendekati posisi ideal (bayangan hijau).`;
       } else if (rS < 80) {
         hint = 'Luruskan keyboard sejajar meja & kursi (Q/E).';
       }
@@ -215,25 +220,23 @@ export function getItemScore(item: FurnitureItem, _all: FurnitureItem[]): ItemSc
 
     case 'mouse': {
       const dist = Math.hypot(item.position.x - item.idealPosition.x, item.position.z - item.idealPosition.z);
-      const dS = grade(dist, 0, 0.09, 0.32);   // 9 cm perfect zone
-      const hS = grade(Math.abs(item.position.y - item.idealPosition.y), 0, 0.04, 0.20);
-      const s = hS >= 70 ? dS : Math.round(dS * (hS / 100));
-      let hint = s >= 80 ? 'Mouse pas — tepat di samping kanan keyboard, bahu rileks.' : `Geser mouse ${Math.round(dist * 100)} cm mendekati samping kanan keyboard (bayangan hijau).`;
-      if (hS < 70) hint = 'Mouse melayang! Turunkan hingga menempel ke meja.';
+      const dS = grade(dist, 0, 0.05, 0.35);
+      // Mouse otomatis snap ke permukaan meja — hanya cek XZ
+      const s = Math.round(dS);
+      const hint = s >= 80
+        ? 'Mouse pas — bahu rileks, siku dekat badan.'
+        : `Geser mouse ${Math.round(dist * 100)} cm mendekati posisi ideal.`;
       return { score: s, status: stat(s), hint };
     }
 
     case 'lamp': {
-      // Zona sempurna: di sisi kanan meja kerja
-      const onRightSide = item.position.x >= 0.35 && item.position.x <= 0.72 && item.position.z >= -1.75 && item.position.z <= -1.18;
       const dist = Math.hypot(item.position.x - item.idealPosition.x, item.position.z - item.idealPosition.z);
-      const dS = onRightSide ? 100 : grade(dist, 0, 0.15, 0.55);
-      const hS = grade(Math.abs(item.position.y - item.idealPosition.y), 0, 0.05, 0.25);
-      const s = hS >= 70 ? dS : Math.round(dS * (hS / 100));
+      // Lampu otomatis snap ke meja — skor murni dari posisi XZ (kanan/kiri pemain)
+      const dS = grade(dist, 0, 0.12, 0.55);
+      const s = Math.round(dS);
       let hint = s >= 80
-        ? 'Lampu di samping kanan meja — menerangi area kerja tanpa menyilaukan layar.'
-        : `Pindahkan lampu ke sisi kanan meja kerja (bayangan hijau), sejauh ${Math.round(dist * 100)} cm.`;
-      if (hS < 70) hint = 'Lampu melayang! Turunkan hingga menempel ke meja.';
+        ? 'Pencahayaan dari samping kanan — tidak menyilaukan layar.'
+        : `Pindahkan lampu ke kanan Anda (${Math.round(dist * 100)} cm dari posisi ideal) agar tidak silau.`;
       return { score: s, status: stat(s), hint };
     }
   }
@@ -272,19 +275,19 @@ export function getSteps(all: FurnitureItem[]): ErgoStep[] {
     grade(angleDiff(mon.rotation.y, mon.idealRotation.y), 0, 8, 45) * 0.35,
   );
 
-  // Langkah keyboard+mouse: rata-rata tertimbang — masing-masing bisa mandiri capai 100
-  const handS = Math.round(kbS * 0.55 + mouseS * 0.45);
+  // Langkah keyboard+mouse digabung (masing-masing independen)
+  const handS = Math.round(kbS * 0.60 + mouseS * 0.40);
 
   const mk = (id: string, itemId: string, icon: string, title: string, why: string, score: number): ErgoStep =>
     ({ id, itemId, icon, title, why, score, done: score >= 80 });
 
   return [
-    mk('chair',   'chair',    '🪑', 'Atur tinggi kursi',           'Kaki menapak rata di lantai, paha horizontal, lutut 90°.',                        chairS),
-    mk('desk',    'desk',     '🪵', 'Atur tinggi meja',             'Permukaan meja sejajar siku agar lengan membentuk 90°.',                           deskS),
-    mk('monitorH','monitor',  '🖥️', 'Atur tinggi monitor',          'Tepi atas layar sejajar mata agar leher tidak menunduk.',                          monHS),
-    mk('monitorD','monitor',  '📏', 'Atur jarak & arah monitor',    'Jarak 50–70 cm dari kursi, layar menghadap lurus ke Anda.',                        monDS),
-    mk('hands',   'keyboard', '⌨️', 'Atur keyboard & mouse',        'Keyboard di depan badan, mouse di samping kanan keyboard, pergelangan lurus.',     handS),
-    mk('lamp',    'lamp',     '💡', 'Atur pencahayaan',             'Pindahkan lampu ke kanan meja agar cahaya menyinari tanpa memantul ke layar.',    lampS),
+    mk('chair',   'chair',    '🪑', 'Atur tinggi kursi',         'Kaki menapak rata di lantai, paha horizontal, lutut 90°.',           chairS),
+    mk('desk',    'desk',     '🪵', 'Atur tinggi meja',           'Permukaan meja sejajar siku agar lengan membentuk 90°.',              deskS),
+    mk('monitorH','monitor',  '🖥️', 'Atur tinggi monitor',        'Tepi atas layar sejajar mata agar leher tidak menunduk.',             monHS),
+    mk('monitorD','monitor',  '📏', 'Atur jarak & arah monitor',  'Jarak 50–70 cm dari kursi, layar menghadap lurus ke Anda.',           monDS),
+    mk('hands',   'keyboard', '⌨️', 'Atur keyboard & mouse',      'Pergelangan lurus, mouse dekat keyboard, bahu rileks.',              handS),
+    mk('lamp',    'lamp',     '💡', 'Atur pencahayaan',           'Cahaya dari samping agar layar tidak memantulkan silau.',             lampS),
   ];
 }
 
@@ -322,15 +325,9 @@ export function calculateErgonomicScore(items: FurnitureItem[]): ErgonomicScore 
   if (feedback.length === 0)
     feedback.push('🎉 Seluruh pengaturan sudah memenuhi standar ergonomi. Pertahankan postur ini dan istirahat 20 detik setiap 20 menit!');
 
-  const lamp  = items.find(i => i.type === 'lamp');
-  const lampS = lamp ? getItemScore(lamp, items) : { score: 0, hint: 'Lampu tidak ditemukan.' };
-  if (lampS.score < 80) feedback.push(lampS.hint);
-
-  // Bobot total: kursi 15%, meja 13%, monitor tinggi 17%, monitor jarak+arah 12%, siku 10%,
-  //              keyboard 11%, mouse 9%, lampu 13%  → total 100%
   const total = Math.round(
-    chairS.score * 0.15 + deskS.score * 0.13 + monHeight * 0.17 + monDist * 0.12 +
-    monFacing * 0.05 + kbS.score * 0.11 + mouseS.score * 0.09 + elbow * 0.05 + lampS.score * 0.13,
+    chairS.score * 0.18 + deskS.score * 0.14 + monHeight * 0.18 + monDist * 0.12 +
+    monFacing * 0.06 + kbS.score * 0.12 + mouseS.score * 0.08 + elbow * 0.12,
   );
 
   return {

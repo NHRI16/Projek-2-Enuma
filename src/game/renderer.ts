@@ -2,7 +2,7 @@ import { FurnitureItem } from './types';
 import { deskSurfaceY } from './ergonomics';
 import {
   DESK_NORM_OFFSET, DESK_WIDTH, DESK_DEPTH, DESK_SURFACE_Y,
-  DESK_VERTS_0, DESK_IDX_0, DESK_VERTS_1, DESK_IDX_1,
+  GAMING_DESK_PARTS,
 } from './deskModel';
 
 export interface RenderWorld {
@@ -165,14 +165,23 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     return { vb, ib, n: i.length };
   };
 
-  // ── Desk GLTF model buffers (pre-baked from low_poly_gaming_desk.gltf) ──
-  type DeskBuf = { vb: WebGLBuffer; ib: WebGLBuffer; n: number };
-  const deskBufs: DeskBuf[] = [
-    mkBuf(DESK_VERTS_0, DESK_IDX_0),
-    mkBuf(DESK_VERTS_1, DESK_IDX_1),
-  ];
-  // Color tones per primitive (0=tabletop surface, 1=legs/frame)
-  const DESK_BUF_SHADE = [1.0, 0.72]; // factor applied to FurnitureItem.color
+  // ── Gaming Desk GLTF model buffers (pre-baked from low_poly_gaming_desk.gltf) ──
+  type DeskPartBuf = {
+    id: string;
+    vb: WebGLBuffer;
+    ib: WebGLBuffer;
+    n: number;
+    color: V3;
+    emissive: number;
+  };
+  const deskPartBufs: DeskPartBuf[] = GAMING_DESK_PARTS.map(p => ({
+    id: p.id,
+    vb: (() => { const b = gl.createBuffer()!; gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, p.verts, gl.STATIC_DRAW); return b; })(),
+    ib: (() => { const b = gl.createBuffer()!; gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, b); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, p.indices, gl.STATIC_DRAW); return b; })(),
+    n: p.indices.length,
+    color: p.color as V3,
+    emissive: p.emissive,
+  }));
   const cube = mkBuf(cubeV, cubeI);
 
   const seg = 20, cv: number[] = [], ci: number[] = [];
@@ -281,25 +290,19 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
 
     switch (it.type) {
       case 'desk': {
-        // ── GLTF low-poly desk model ──────────────────────────────────────────
-        // The model vertices are already in GLTF world-space. We apply:
-        //   1. DESK_NORM_OFFSET → floor at y=0, desk centered in x/z
-        //   2. S(sx, sy, sz)    → scale to match FurnitureItem dimensions
-        //   3. RY(r)            → rotation (from FurnitureItem)
-        //   4. T(p.x, 0, p.z)  → translate to game-world position (y=0 = floor)
-        // Note: position.y is the tabletop centre used by the ergonomics engine;
-        //       the visual model always sits with legs on the floor.
+        // ── Full GLTF Low-Poly Gaming Desk Setup ─────────────────────────────
         const surf   = p.y + sc.y / 2;          // deskSurfaceY in game coords
         const dsx    = sc.x / DESK_WIDTH;        // x scale to match item width
         const dsz    = sc.z / DESK_DEPTH;        // z scale to match item depth
         const dsy    = surf / DESK_SURFACE_Y;    // y scale so surface = surf
         const normT  = T(DESK_NORM_OFFSET[0], DESK_NORM_OFFSET[1], DESK_NORM_OFFSET[2]);
         const deskM  = mul(mul(mul(T(p.x, 0, p.z), RY(r)), S(dsx, dsy, dsz)), normT);
-        for (let bi = 0; bi < deskBufs.length; bi++) {
-          const bc = ghost
-            ? [0.25, 0.95, 0.55] as V3
-            : shade(c, DESK_BUF_SHADE[bi]);
-          drawBuf(deskBufs[bi], deskM, bc);
+        for (const part of deskPartBufs) {
+          const partCol = ghost
+            ? ([0.25, 0.95, 0.55] as V3)
+            : (part.id === 'desk_top' ? (shade(c, 0.65)) : part.color);
+          const emis = ghost ? 0 : part.emissive;
+          drawBuf(part, deskM, partCol, emis);
         }
         break;
       }
@@ -732,30 +735,24 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     const kb = f.find(i => i.type === 'keyboard')!;
     const ms = f.find(i => i.type === 'mouse')!;
     const surf = deskSurfaceY(desk);
+    const dsx = desk.scale.x / DESK_WIDTH;
 
-    // CPU di bawah meja
-    const pc: V3 = [desk.position.x + desk.scale.x/2 - 0.22, 0.23, desk.position.z - 0.12];
-    draw('cube', mul(T(pc[0],pc[1],pc[2]), S(0.20,0.46,0.44)), [0.14,0.15,0.18]);
-    draw('cube', mul(T(pc[0]+0.101,pc[1]+0.08,pc[2]), S(0.006,0.22,0.30)), [0.20,0.55,0.95], 0.75);
-    draw('cube', mul(T(pc[0]+0.101,pc[1]+0.19,pc[2]+0.14), S(0.008,0.012,0.012)), [0.35,0.95,0.45], 0.9);
-    draw('cyl', mul(T(pc[0]+0.101,pc[1]-0.10,pc[2]-0.10), S(0.10,0.008,0.10)), [0.25,0.26,0.30]);
-
-    // mousepad mengikuti mouse
-    draw('cube', mul(mul(T(ms.position.x, surf + 0.002, ms.position.z), RY((ms.rotation.y||0)*Math.PI/180)), S(0.24,0.004,0.20)), [0.16,0.17,0.21]);
+    // Lokasi Gaming PC Tower di atas meja
+    const pcTop: V3 = [desk.position.x - 0.57 * dsx, surf + 0.55, desk.position.z - 0.05];
+    const pcBack: V3 = [desk.position.x - 0.57 * dsx, surf + 0.20, desk.position.z - 0.22];
 
     const cc: V3 = [0.10,0.10,0.12];
-    const pcTop: V3 = [pc[0], pc[1]+0.20, pc[2]-0.20];
     // kabel monitor → belakang meja → CPU
     const monBase: V3 = [mon.position.x, mon.position.y - mon.scale.y/2 - 0.16, mon.position.z + 0.02];
     const deskBack: V3 = [mon.position.x, surf - 0.02, desk.position.z - desk.scale.z/2 + 0.04];
     cable(monBase, deskBack, 0.02, cc, 8);
-    cable(deskBack, pcTop, 0.10, cc, 18);
+    cable(deskBack, pcBack, 0.10, cc, 18);
     // kabel keyboard → CPU
     cable([kb.position.x, kb.position.y, kb.position.z - kb.scale.z/2], [deskBack[0]-0.06, deskBack[1], deskBack[2]], 0.05, cc, 16);
     // kabel mouse → CPU
     cable([ms.position.x, ms.position.y, ms.position.z - ms.scale.z/2], [deskBack[0]+0.06, deskBack[1], deskBack[2]], 0.05, cc, 16);
     // kabel listrik CPU → stopkontak
-    cable([pc[0]-0.10, pc[1]-0.16, pc[2]-0.18], [1.15, 0.24, -3.90], 0.06, [0.09,0.09,0.11], 20);
+    cable(pcBack, [1.15, 0.24, -3.90], 0.08, [0.09,0.09,0.11], 20);
     // kabel lampu → stopkontak
     const lamp = f.find(i => i.type === 'lamp')!;
     cable([lamp.position.x, surf + 0.01, lamp.position.z], [1.15, 0.24, -3.90], 0.12, [0.55,0.45,0.30], 22);

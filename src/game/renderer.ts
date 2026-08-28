@@ -6,6 +6,9 @@ import {
   KEYBOARD_NORM_OFFSET, KEYBOARD_WIDTH, KEYBOARD_HEIGHT, KEYBOARD_DEPTH, KEYBOARD_PARTS,
   MOUSE_NORM_OFFSET, MOUSE_WIDTH, MOUSE_HEIGHT, MOUSE_DEPTH, MOUSE_PARTS,
 } from './deskModel';
+import {
+  CHAIR_NORM_OFFSET, CHAIR_WIDTH, CHAIR_HEIGHT, CHAIR_DEPTH, CHAIR_PARTS,
+} from './chairModel';
 
 export interface RenderWorld {
   camX: number; camY: number; camZ: number; yaw: number; pitch: number;
@@ -176,7 +179,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     color: V3;
     emissive: number;
   };
-  const makePartBufs = (parts: typeof DESK_PARTS): PartBuf[] => parts.map(p => ({
+  const makePartBufs = (parts: { id: string; color: [number, number, number]; emissive: number; verts: Float32Array; indices: Uint16Array; }[]): PartBuf[] => parts.map(p => ({
     id: p.id,
     vb: (() => { const b = gl.createBuffer()!; gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, p.verts, gl.STATIC_DRAW); return b; })(),
     ib: (() => { const b = gl.createBuffer()!; gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, b); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, p.indices, gl.STATIC_DRAW); return b; })(),
@@ -186,6 +189,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
   }));
 
   const deskPartBufs = makePartBufs(DESK_PARTS);
+  const chairPartBufs = makePartBufs(CHAIR_PARTS);
   const monitorPartBufs = makePartBufs(MONITOR_PARTS);
   const keyboardPartBufs = makePartBufs(KEYBOARD_PARTS);
   const mousePartBufs = makePartBufs(MOUSE_PARTS);
@@ -314,23 +318,18 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
         break;
       }
       case 'chair': {
-        draw('cube', P(0,0,0, sc.x, sc.y, sc.z), c);                              // dudukan
-        draw('cube', P(0, 0.035, 0, sc.x*0.92, 0.03, sc.z*0.92), shade(c,1.35));  // busa
-        const pedH = p.y - 0.06;
-        draw('cyl', P(0, pedH/2 - p.y + 0.03, 0, 0.07, pedH, 0.07), [0.32,0.33,0.38]);
-        for (let i = 0; i < 5; i++) {
-          const a = i/5*Math.PI*2;
-          draw('cyl', P(Math.cos(a)*0.21, 0.045 - p.y, Math.sin(a)*0.21, 0.05, 0.05, 0.05), [0.22,0.22,0.26]);
-          draw('cube', P(Math.cos(a)*0.11, 0.075 - p.y, Math.sin(a)*0.11, 0.20, 0.035, 0.05), [0.26,0.26,0.30]);
-        }
-        // sandaran
-        draw('cube', P(0, 0.30, -sc.z/2 + 0.03, sc.x*0.92, 0.46, 0.05), shade(c,1.25));
-        draw('cube', P(0, 0.16, -sc.z/2 + 0.05, 0.07, 0.16, 0.05), [0.25,0.25,0.30]);
-        // penyangga lumbar
-        draw('cube', P(0, 0.20, -sc.z/2 + 0.08, sc.x*0.7, 0.09, 0.03), shade(c,1.6));
-        for (const s of [-1,1]) {
-          draw('cube', P(s*(sc.x/2+0.01), 0.15, 0.02, 0.05, 0.04, sc.z*0.62), [0.18,0.18,0.22]);
-          draw('cube', P(s*(sc.x/2+0.01), 0.08, -0.06, 0.035, 0.14, 0.035), [0.22,0.22,0.26]);
+        // ── Full GLTF 3D Gaming Chair (Racing Bucket Seat + Lumbar + Base) ──
+        const csx    = (sc.x + 0.16) / CHAIR_WIDTH;
+        const csy    = (p.y + 0.05) / (CHAIR_HEIGHT * 0.40);
+        const csz    = (sc.z + 0.16) / CHAIR_DEPTH;
+        const normT  = T(CHAIR_NORM_OFFSET[0], CHAIR_NORM_OFFSET[1], CHAIR_NORM_OFFSET[2]);
+        const chairM = mul(mul(mul(T(p.x, 0, p.z), RY(r)), S(csx, csy, csz)), normT);
+        for (const part of chairPartBufs) {
+          const partCol = ghost
+            ? ([0.25, 0.95, 0.55] as V3)
+            : (part.id === 'chair_accents' ? ([0.05, 0.65, 1.00] as V3) : part.color);
+          const emis = ghost ? 0 : part.emissive;
+          drawBuf(part, chairM, partCol, emis);
         }
         break;
       }

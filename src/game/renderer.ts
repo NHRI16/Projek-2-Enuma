@@ -1,8 +1,10 @@
 import { FurnitureItem } from './types';
 import { deskSurfaceY } from './ergonomics';
 import {
-  DESK_NORM_OFFSET, DESK_WIDTH, DESK_DEPTH, DESK_SURFACE_Y,
-  GAMING_DESK_PARTS,
+  DESK_NORM_OFFSET, DESK_WIDTH, DESK_DEPTH, DESK_HEIGHT, DESK_PARTS,
+  MONITOR_NORM_OFFSET, MONITOR_WIDTH, MONITOR_HEIGHT, MONITOR_DEPTH, MONITOR_PARTS,
+  KEYBOARD_NORM_OFFSET, KEYBOARD_WIDTH, KEYBOARD_HEIGHT, KEYBOARD_DEPTH, KEYBOARD_PARTS,
+  MOUSE_NORM_OFFSET, MOUSE_WIDTH, MOUSE_HEIGHT, MOUSE_DEPTH, MOUSE_PARTS,
 } from './deskModel';
 
 export interface RenderWorld {
@@ -165,8 +167,8 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     return { vb, ib, n: i.length };
   };
 
-  // ── Gaming Desk GLTF model buffers (pre-baked from low_poly_gaming_desk.gltf) ──
-  type DeskPartBuf = {
+  // ── Pre-baked GLTF 3D Model Buffers from low_poly_gaming_desk.gltf ──
+  type PartBuf = {
     id: string;
     vb: WebGLBuffer;
     ib: WebGLBuffer;
@@ -174,7 +176,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     color: V3;
     emissive: number;
   };
-  const deskPartBufs: DeskPartBuf[] = GAMING_DESK_PARTS.map(p => ({
+  const makePartBufs = (parts: typeof DESK_PARTS): PartBuf[] => parts.map(p => ({
     id: p.id,
     vb: (() => { const b = gl.createBuffer()!; gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, p.verts, gl.STATIC_DRAW); return b; })(),
     ib: (() => { const b = gl.createBuffer()!; gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, b); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, p.indices, gl.STATIC_DRAW); return b; })(),
@@ -182,6 +184,11 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     color: p.color as V3,
     emissive: p.emissive,
   }));
+
+  const deskPartBufs = makePartBufs(DESK_PARTS);
+  const monitorPartBufs = makePartBufs(MONITOR_PARTS);
+  const keyboardPartBufs = makePartBufs(KEYBOARD_PARTS);
+  const mousePartBufs = makePartBufs(MOUSE_PARTS);
   const cube = mkBuf(cubeV, cubeI);
 
   const seg = 20, cv: number[] = [], ci: number[] = [];
@@ -294,7 +301,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
         const surf   = p.y + sc.y / 2;          // deskSurfaceY in game coords
         const dsx    = sc.x / DESK_WIDTH;        // x scale to match item width
         const dsz    = sc.z / DESK_DEPTH;        // z scale to match item depth
-        const dsy    = surf / DESK_SURFACE_Y;    // y scale so surface = surf
+        const dsy    = surf / DESK_HEIGHT;       // y scale so surface = surf
         const normT  = T(DESK_NORM_OFFSET[0], DESK_NORM_OFFSET[1], DESK_NORM_OFFSET[2]);
         const deskM  = mul(mul(mul(T(p.x, 0, p.z), RY(r)), S(dsx, dsy, dsz)), normT);
         for (const part of deskPartBufs) {
@@ -328,52 +335,58 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
         break;
       }
       case 'monitor': {
-        draw('cube', P(0,0,0, sc.x, sc.y, sc.z), c);
-        draw('cube', P(0, 0, sc.z/2 + 0.004, sc.x-0.035, sc.y-0.035, 0.006), ghost ? c : [0.16,0.30,0.52], ghost?0:0.55);
-        if (!ghost) { // "konten" layar
-          for (let i = 0; i < 3; i++) {
-            const w = sc.x*0.55 - i*0.06;
-            const lx = -sc.x/2 + 0.05 + w/2 + i*0.02;
-            draw('cube', P(lx, sc.y/2 - 0.06 - i*0.055, sc.z/2 + 0.008, w, 0.016, 0.003), [0.55,0.72,0.95], 0.7);
-          }
+        // ── GLTF 3D Gaming Monitor (curved screen + stand + RGB accents) ──
+        const msx    = sc.x / MONITOR_WIDTH;
+        const msy    = (sc.y + 0.16) / MONITOR_HEIGHT;
+        const msz    = (sc.z + 0.12) / MONITOR_DEPTH;
+        const normT  = T(MONITOR_NORM_OFFSET[0], MONITOR_NORM_OFFSET[1], MONITOR_NORM_OFFSET[2]);
+        const monM   = mul(mul(mul(T(p.x, p.y - sc.y/2 - 0.08, p.z), RY(r)), S(msx, msy, msz)), normT);
+        for (const part of monitorPartBufs) {
+          const partCol = ghost ? ([0.25, 0.95, 0.55] as V3) : part.color;
+          const emis = ghost ? 0 : part.emissive;
+          drawBuf(part, monM, partCol, emis);
         }
-        draw('cube', P(0, -sc.y/2 - 0.075, 0, 0.05, 0.15, 0.045), [0.28,0.28,0.32]);
-        draw('cube', P(0, -sc.y/2 - 0.155, 0.02, 0.24, 0.018, 0.15), [0.26,0.26,0.30]);
-        // Penyangga (riser/tumpukan buku) mengisi celah bila monitor dinaikkan
+        // Penyangga (buku/riser) bila dinaikkan jauh di atas meja
         if (!ghost) {
-          const standBottom = p.y - sc.y/2 - 0.164;
+          const standBottom = p.y - sc.y/2 - 0.08;
           const gap = standBottom - deskSurf;
-          if (gap > 0.012) {
+          if (gap > 0.02) {
             const n = Math.max(1, Math.round(gap / 0.045));
             const hEach = gap / n;
             for (let i = 0; i < n; i++) {
               const cy = deskSurf + hEach * (i + 0.5) - p.y;
               const tone: V3 = [[0.62,0.30,0.26],[0.24,0.40,0.30],[0.28,0.34,0.52],[0.58,0.46,0.22]][i % 4] as V3;
-              draw('cube', P(0, cy, 0.02, 0.30 - (i % 2) * 0.02, hEach * 0.86, 0.20 - (i % 2) * 0.015), tone);
+              draw('cube', P(0, cy, 0.02, 0.32 - (i % 2) * 0.02, hEach * 0.88, 0.22 - (i % 2) * 0.015), tone);
             }
           }
         }
         break;
       }
       case 'keyboard': {
-        draw('cube', P(0,0,0, sc.x, sc.y, sc.z), c);
-        if (!ghost) {
-          for (let row = 0; row < 4; row++) for (let col = 0; col < 13; col++) {
-            const lx = -sc.x/2 + 0.028 + col*0.0315;
-            const lz = -sc.z/2 + 0.026 + row*0.026;
-            draw('cube', P(lx, sc.y/2 + 0.004, lz, 0.026, 0.006, 0.020), [0.36,0.36,0.40]);
-          }
-          draw('cube', P(0, sc.y/2 + 0.004, sc.z/2 - 0.024, 0.17, 0.006, 0.022), [0.36,0.36,0.40]);
-          draw('cube', P(-sc.x/2+0.03, sc.y/2+0.006, -sc.z/2+0.026, 0.008, 0.002, 0.006), [0.3,0.9,0.4], 0.8);
+        // ── GLTF 3D Gaming Keyboard (mechanical keys + RGB backlighting) ──
+        const ksx    = sc.x / KEYBOARD_WIDTH;
+        const ksy    = (sc.y + 0.02) / KEYBOARD_HEIGHT;
+        const ksz    = sc.z / KEYBOARD_DEPTH;
+        const normT  = T(KEYBOARD_NORM_OFFSET[0], KEYBOARD_NORM_OFFSET[1], KEYBOARD_NORM_OFFSET[2]);
+        const kbM    = mul(mul(mul(T(p.x, p.y - sc.y/2, p.z), RY(r)), S(ksx, ksy, ksz)), normT);
+        for (const part of keyboardPartBufs) {
+          const partCol = ghost ? ([0.25, 0.95, 0.55] as V3) : part.color;
+          const emis = ghost ? 0 : part.emissive;
+          drawBuf(part, kbM, partCol, emis);
         }
         break;
       }
       case 'mouse': {
-        draw('cyl', P(0, 0, 0, sc.x, sc.y, sc.z), c);
-        draw('cyl', P(0, sc.y/2 + 0.005, 0.006, sc.x*0.9, 0.012, sc.z*0.86), shade(c,1.5));
-        if (!ghost) {
-          draw('cube', P(0, sc.y/2 + 0.013, -0.022, 0.007, 0.007, 0.016), [0.45,0.45,0.5]);
-          draw('cube', P(0, sc.y/2 + 0.012, -0.032, 0.0025, 0.006, 0.030), [0.30,0.30,0.34]);
+        // ── GLTF 3D Gaming Mouse (ergonomic body + RGB lighting) ──
+        const msx    = sc.x / MOUSE_WIDTH;
+        const msy    = (sc.y + 0.01) / MOUSE_HEIGHT;
+        const msz    = sc.z / MOUSE_DEPTH;
+        const normT  = T(MOUSE_NORM_OFFSET[0], MOUSE_NORM_OFFSET[1], MOUSE_NORM_OFFSET[2]);
+        const mouseM = mul(mul(mul(T(p.x, p.y - sc.y/2, p.z), RY(r)), S(msx, msy, msz)), normT);
+        for (const part of mousePartBufs) {
+          const partCol = ghost ? ([0.25, 0.95, 0.55] as V3) : part.color;
+          const emis = ghost ? 0 : part.emissive;
+          drawBuf(part, mouseM, partCol, emis);
         }
         break;
       }

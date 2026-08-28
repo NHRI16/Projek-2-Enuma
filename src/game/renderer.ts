@@ -1,5 +1,9 @@
 import { FurnitureItem } from './types';
 import { deskSurfaceY } from './ergonomics';
+import {
+  DESK_NORM_OFFSET, DESK_WIDTH, DESK_DEPTH, DESK_SURFACE_Y,
+  DESK_VERTS_0, DESK_IDX_0, DESK_VERTS_1, DESK_IDX_1,
+} from './deskModel';
 
 export interface RenderWorld {
   camX: number; camY: number; camZ: number; yaw: number; pitch: number;
@@ -160,6 +164,15 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     const ib = gl.createBuffer()!; gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, i, gl.STATIC_DRAW);
     return { vb, ib, n: i.length };
   };
+
+  // ── Desk GLTF model buffers (pre-baked from low_poly_gaming_desk.gltf) ──
+  type DeskBuf = { vb: WebGLBuffer; ib: WebGLBuffer; n: number };
+  const deskBufs: DeskBuf[] = [
+    mkBuf(DESK_VERTS_0, DESK_IDX_0),
+    mkBuf(DESK_VERTS_1, DESK_IDX_1),
+  ];
+  // Color tones per primitive (0=tabletop surface, 1=legs/frame)
+  const DESK_BUF_SHADE = [1.0, 0.72]; // factor applied to FurnitureItem.color
   const cube = mkBuf(cubeV, cubeI);
 
   const seg = 20, cv: number[] = [], ci: number[] = [];
@@ -193,6 +206,23 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     gl!.uniform1f(U.time,now); gl!.uniform1f(U.ghost,curGhost?1:0);
     gl!.uniform1f(U.emis,emis); gl!.uniform1f(U.held,curHeld?1:0);
     gl!.drawElements(gl!.TRIANGLES,b.n,gl!.UNSIGNED_SHORT,0);
+  }
+
+  /** Draw a raw VBO/IBO pair with the same shader pipeline as draw(). */
+  function drawBuf(db: DeskBuf, m: Float32Array, c: V3, emis = 0) {
+    gl!.bindBuffer(gl!.ARRAY_BUFFER, db.vb);
+    gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, db.ib);
+    gl!.enableVertexAttribArray(A.pos); gl!.vertexAttribPointer(A.pos,3,gl!.FLOAT,false,24,0);
+    gl!.enableVertexAttribArray(A.norm); gl!.vertexAttribPointer(A.norm,3,gl!.FLOAT,false,24,12);
+    gl!.uniformMatrix4fv(U.mvp,false,mul(vpM,m));
+    gl!.uniformMatrix4fv(U.model,false,m);
+    gl!.uniformMatrix3fv(U.nmat,false,nMat(m));
+    gl!.uniform3fv(U.col,c); gl!.uniform3fv(U.cam,camP);
+    gl!.uniform3f(U.l1,1.6,2.7,0.6); gl!.uniform3f(U.l2,-2.2,2.4,-2.0);
+    gl!.uniform1f(U.sel,curSel?1:0); gl!.uniform1f(U.hov,curHov?1:0);
+    gl!.uniform1f(U.time,now); gl!.uniform1f(U.ghost,curGhost?1:0);
+    gl!.uniform1f(U.emis,emis); gl!.uniform1f(U.held,curHeld?1:0);
+    gl!.drawElements(gl!.TRIANGLES,db.n,gl!.UNSIGNED_SHORT,0);
   }
 
   /**
@@ -251,17 +281,25 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
 
     switch (it.type) {
       case 'desk': {
-        draw('cube', P(0,0,0, sc.x, sc.y, sc.z), c);
-        draw('cube', P(0, -0.012, 0, sc.x*0.995, sc.y*0.4, sc.z*0.99), shade(c,1.12)); // lapisan tepi
-        const legH = p.y - sc.y/2, ox = sc.x/2-0.07, oz = sc.z/2-0.07;
-        const lc = shade(c, 0.55);
-        for (const [lx,lz] of [[-ox,-oz],[ox,-oz],[-ox,oz],[ox,oz]] as [number,number][])
-          draw('cube', P(lx, legH/2 - p.y, lz, 0.05, legH, 0.05), lc);
-        // palang penguat
-        draw('cube', P(0, 0.12 - p.y, -oz, sc.x-0.18, 0.03, 0.03), lc);
-        draw('cube', P(0, 0.12 - p.y, oz, sc.x-0.18, 0.03, 0.03), lc);
-        if (!ghost) { // panel belakang
-          draw('cube', P(0, -sc.y/2 - 0.16, -sc.z/2 + 0.03, sc.x-0.16, 0.28, 0.02), shade(c,0.8));
+        // ── GLTF low-poly desk model ──────────────────────────────────────────
+        // The model vertices are already in GLTF world-space. We apply:
+        //   1. DESK_NORM_OFFSET → floor at y=0, desk centered in x/z
+        //   2. S(sx, sy, sz)    → scale to match FurnitureItem dimensions
+        //   3. RY(r)            → rotation (from FurnitureItem)
+        //   4. T(p.x, 0, p.z)  → translate to game-world position (y=0 = floor)
+        // Note: position.y is the tabletop centre used by the ergonomics engine;
+        //       the visual model always sits with legs on the floor.
+        const surf   = p.y + sc.y / 2;          // deskSurfaceY in game coords
+        const dsx    = sc.x / DESK_WIDTH;        // x scale to match item width
+        const dsz    = sc.z / DESK_DEPTH;        // z scale to match item depth
+        const dsy    = surf / DESK_SURFACE_Y;    // y scale so surface = surf
+        const normT  = T(DESK_NORM_OFFSET[0], DESK_NORM_OFFSET[1], DESK_NORM_OFFSET[2]);
+        const deskM  = mul(mul(mul(T(p.x, 0, p.z), RY(r)), S(dsx, dsy, dsz)), normT);
+        for (let bi = 0; bi < deskBufs.length; bi++) {
+          const bc = ghost
+            ? [0.25, 0.95, 0.55] as V3
+            : shade(c, DESK_BUF_SHADE[bi]);
+          drawBuf(deskBufs[bi], deskM, bc);
         }
         break;
       }

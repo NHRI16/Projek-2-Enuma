@@ -23,7 +23,7 @@ export const IDEAL = {
    ═══════════════════════════════════════════════════════════ */
 const CHAIR_LOCAL: Record<string, { x: number; z: number }> = {
   desk:     { x:  0,     z: 0.72  },  // 72 cm di depan kursi
-  monitor:  { x:  0,     z: 0.64  },  // 64 cm di depan kursi
+  monitor:  { x:  0,     z: 0.94  },  // 94 cm di depan kursi (baseline workstation referensi)
   keyboard: { x:  0,     z: 0.495 },  // 49.5 cm di depan kursi (di atas meja)
   mouse:    { x: -0.35,  z: 0.495 },  // 35 cm ke kanan pemain
   lamp:     { x: -0.55,  z: 0.70  },  // 55 cm ke kanan pemain — tidak silau layar
@@ -74,16 +74,9 @@ export function getMetric(item: FurnitureItem, _all: FurnitureItem[]): Metric {
       };
 
     case 'desk': {
+      // Meja fixed horizontal — metric hanya tinggi
       const surf = deskSurfaceY(item);
       const idealSurf = item.idealPosition.y + item.scale.y / 2;
-      if (Math.abs(surf - idealSurf) <= 0.03) {
-        const d = Math.hypot(item.position.x - item.idealPosition.x, item.position.z - item.idealPosition.z) * 100;
-        return {
-          label: 'Jarak dari posisi ideal kursi',
-          current: d, target: 0,
-          unit: 'cm', barMin: 0, barMax: 60, tol: 8, control: 'move',
-        };
-      }
       return {
         label: 'Tinggi permukaan meja',
         current: surf * 100,
@@ -164,19 +157,16 @@ export function getItemScore(item: FurnitureItem, _all: FurnitureItem[]): ItemSc
     }
 
     case 'desk': {
+      // Meja fixed horizontal — skor hanya dari tinggi (70%) + rotasi (30%)
       const surf = deskSurfaceY(item);
       const idealSurf = item.idealPosition.y + item.scale.y / 2;
       const hS = grade(surf, idealSurf, 0.025, 0.14);
-      const dist = Math.hypot(item.position.x - item.idealPosition.x, item.position.z - item.idealPosition.z);
-      const xzS = grade(dist, 0, 0.08, 0.40);
       const rS = grade(angleDiff(item.rotation.y, item.idealRotation.y), 0, 5, 40);
-      const s = Math.round(hS * 0.45 + xzS * 0.35 + rS * 0.20);
+      const s = Math.round(hS * 0.70 + rS * 0.30);
       const d = Math.round((idealSurf - surf) * 100);
-      let hint = 'Tinggi, posisi & arah meja pas.';
+      let hint = 'Tinggi & arah meja pas.';
       if (hS < 80) {
         hint = d > 0 ? `Naikkan meja ${d} cm lagi.` : `Turunkan meja ${-d} cm lagi.`;
-      } else if (xzS < 80) {
-        hint = `Geser meja ${Math.round(dist * 100)} cm mendekati panduan (bayangan hijau) di depan kursi.`;
       } else if (rS < 80) {
         hint = `Putar meja sejajar dengan kursi (Q/E).`;
       }
@@ -425,6 +415,9 @@ export function normalizeDeskItems(items: FurnitureItem[]): FurnitureItem[] {
 
         if (it.type === 'desk') {
           it.idealPosition.y = IDEAL.deskSurface - it.scale.y / 2;
+          // Meja fixed horizontal: idealX dan idealZ selalu = posisi meja aktual
+          it.idealPosition.x = it.position.x;
+          it.idealPosition.z = it.position.z;
         } else if (it.type === 'monitor') {
           it.idealPosition.y = IDEAL.chairSeat + IDEAL.monitorEyeOffset;
         } else if (it.type === 'keyboard' || it.type === 'mouse') {

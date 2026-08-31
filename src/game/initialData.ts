@@ -12,6 +12,8 @@ export const initialFurniture: FurnitureItem[] = [
     scale: { x: 1.55, y: 0.05, z: 0.82 },
     color: '#282A36',
     selected: false,
+    // X dan Z ideal = posisi awal (meja fixed horizontal = baseline sempurna)
+    // Y ideal tetap 73 cm (penilaian tinggi tidak berubah)
     idealPosition: { x: 0, y: 0.705, z: -1.50 },
     idealRotation: { x: 0, y: 0, z: 0 },
     tolerancePos: 0.05, toleranceRot: 10,
@@ -44,7 +46,8 @@ export const initialFurniture: FurnitureItem[] = [
     scale: { x: 0.58, y: 0.35, z: 0.03 },
     color: '#1B1B1F',
     selected: false,
-    idealPosition: { x: 0, y: 1.07, z: -1.42 },
+    // idealZ = -1.72 sesuai baseline workstation referensi (monitor di atas buku)
+    idealPosition: { x: 0, y: 1.07, z: -1.72 },
     idealRotation: { x: 0, y: 0, z: 0 },
     tolerancePos: 0.06, toleranceRot: 8,
     heightAdjustable: true, minHeight: 0.85, maxHeight: 1.40,

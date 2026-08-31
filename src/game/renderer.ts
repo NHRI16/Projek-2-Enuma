@@ -83,7 +83,7 @@ export function pickBox(it: FurnitureItem): { p: V3; h: V3 } {
     case 'chair':    sy = 0.85; cy = it.position.y + 0.18; sx = it.scale.x + 0.12; sz = it.scale.z + 0.12; break;
     case 'monitor':  sy = it.scale.y + 0.28; cy = it.position.y - 0.08; sz = 0.18; break;
     case 'keyboard': sy = 0.07; sx += 0.06; sz += 0.06; break;
-    case 'mouse':    sy = 0.07; sx = 0.13; sz = 0.15; break;
+    case 'mouse':    sy = 0.07; sx = 0.28; sz = 0.28; break;
     case 'lamp':     sy = it.scale.y + 0.22; cy = it.position.y + 0.06; sx = 0.20; sz = 0.20; break;
     case 'desk':     sy = it.scale.y + 0.04; break;
   }

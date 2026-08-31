@@ -297,7 +297,11 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
     const it = world.current.furniture.find(f => f.id === id);
     if (it) {
       setHeldName(it.name);
-      toast(`✋ ${ICON[it.type]} ${it.name} — Klik/tap lagi untuk meletakkan`);
+      if (it.type === 'desk') {
+        toast(`✋ ${ICON[it.type]} ${it.name} — Scroll untuk naik/turun. Posisi horizontal terkunci.`);
+      } else {
+        toast(`✋ ${ICON[it.type]} ${it.name} — Klik/tap lagi untuk meletakkan`);
+      }
     }
   }, [toast]);
 
@@ -315,15 +319,18 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
       switch (a) {
         case 'up': it.position.y = clamp(it.position.y + H, it.minHeight, it.maxHeight); break;
         case 'down': it.position.y = clamp(it.position.y - H, it.minHeight, it.maxHeight); break;
-        case 'fwd': it.position.z -= M; break;
-        case 'back': it.position.z += M; break;
-        case 'left': it.position.x -= M; break;
-        case 'right': it.position.x += M; break;
+        // Meja tidak bisa dipindah horizontal
+        case 'fwd':  if (it.type !== 'desk') it.position.z -= M; break;
+        case 'back': if (it.type !== 'desk') it.position.z += M; break;
+        case 'left': if (it.type !== 'desk') it.position.x -= M; break;
+        case 'right':if (it.type !== 'desk') it.position.x += M; break;
         case 'rotL': it.rotation.y -= R; break;
         case 'rotR': it.rotation.y += R; break;
       }
-      it.position.x = clamp(it.position.x, -1.9, 1.9);
-      it.position.z = clamp(it.position.z, -2.6, 0.4);
+      if (it.type !== 'desk') {
+        it.position.x = clamp(it.position.x, -1.9, 1.9);
+        it.position.z = clamp(it.position.z, -2.6, 0.4);
+      }
       if (it.type === 'desk' && it.position.y !== before) {
         const d = it.position.y - before;
         next.forEach(o => { if (o.type === 'monitor') o.position.y = clamp(o.position.y + d, o.minHeight, o.maxHeight); });
@@ -597,9 +604,12 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
 
           const hit = raycastPlane(ori, dir, targetY);
           if (hit) {
-            // Kita sudah set clamp sesuai meja di atas, jadi ini cukup assign posisi raycast sementara
-            it.position.x = hit[0];
-            it.position.z = hit[2];
+            // Meja fixed horizontal: hanya izinkan update X/Z untuk bukan meja
+            if (it.type !== 'desk') {
+              it.position.x = hit[0];
+              it.position.z = hit[2];
+            }
+            // Untuk meja: X/Z tidak berubah, hanya Y via scroll
           }
         }
         if (t - lastLiveUpdate > 100) {
@@ -919,15 +929,25 @@ function AdjustCard({ item, all, onAct, onClose, guide, onToggleGuide }: {
               </div>
             </div>
           )}
-          <div className="flex flex-col gap-1">
-            <span className="text-[9px] text-slate-500 text-center">GESER</span>
-            <div className="grid grid-cols-3 gap-0.5" style={{ width: 96 }}>
-              <span /><Hold onAct={() => onAct('fwd')} highlight={m.control === 'move'}>↑</Hold><span />
-              <Hold onAct={() => onAct('left')} highlight={m.control === 'move'}>←</Hold>
-              <Hold onAct={() => onAct('back')} highlight={m.control === 'move'}>↓</Hold>
-              <Hold onAct={() => onAct('right')} highlight={m.control === 'move'}>→</Hold>
+          {item.type !== 'desk' ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-[9px] text-slate-500 text-center">GESER</span>
+              <div className="grid grid-cols-3 gap-0.5" style={{ width: 96 }}>
+                <span /><Hold onAct={() => onAct('fwd')} highlight={m.control === 'move'}>↑</Hold><span />
+                <Hold onAct={() => onAct('left')} highlight={m.control === 'move'}>←</Hold>
+                <Hold onAct={() => onAct('back')} highlight={m.control === 'move'}>↓</Hold>
+                <Hold onAct={() => onAct('right')} highlight={m.control === 'move'}>→</Hold>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex flex-col gap-1 justify-center items-center" style={{ width: 96 }}>
+              <span className="text-[9px] text-slate-500 text-center">GESER</span>
+              <div className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/30">
+                <span className="text-[18px]">🔒</span>
+                <span className="text-[9px] text-slate-500 text-center leading-tight">Posisi<br/>terkunci</span>
+              </div>
+            </div>
+          )}
           <div className="flex flex-col gap-1">
             <span className="text-[9px] text-slate-500 text-center">PUTAR</span>
             <div className="flex gap-1">

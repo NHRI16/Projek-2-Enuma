@@ -1,0 +1,11 @@
+Model Information:
+* title:	office room
+* source:	https://sketchfab.com/3d-models/office-room-ca28dffae44e44af91dd1e06971dbbd0
+* author:	78652552anans (https://sketchfab.com/78652552anans)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "office room" (https://sketchfab.com/3d-models/office-room-ca28dffae44e44af91dd1e06971dbbd0) by 78652552anans (https://sketchfab.com/78652552anans) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

@@ -15,6 +15,9 @@ import {
 import {
   BOOKS_NORM_OFFSET, BOOKS_WIDTH, BOOKS_HEIGHT, BOOKS_DEPTH, BOOKS_PARTS,
 } from './booksModel';
+import {
+  ROOM_OFFSET, ROOM_SCALE, ROOM_PARTS,
+} from './roomModel';
 
 export interface RenderWorld {
   camX: number; camY: number; camZ: number; yaw: number; pitch: number;
@@ -62,7 +65,6 @@ const lookDir = (ex: number, ey: number, ez: number, yaw: number, pitch: number)
 };
 const nMat = (m: Float32Array) => new Float32Array([m[0],m[1],m[2], m[4],m[5],m[6], m[8],m[9],m[10]]);
 const hex = (h: string): V3 => { const v = parseInt(h.replace('#',''),16); return [(v>>16&255)/255,(v>>8&255)/255,(v&255)/255]; };
-const shade = (c: V3, f: number): V3 => [Math.min(1,c[0]*f), Math.min(1,c[1]*f), Math.min(1,c[2]*f)];
 /** Matriks rotasi dari tiga vektor basis ortogonal (kolom = arah lokal X, Y, Z di ruang dunia) */
 const mkRot = (lx: V3, ly: V3, lz: V3): Float32Array => new Float32Array([
   lx[0], lx[1], lx[2], 0,
@@ -112,17 +114,19 @@ export function raycastPlane(o: V3, d: V3, yPlane: number): V3 | null {
 
 /* ═══════════════════════════════════════════════════════════ */
 export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => RenderWorld) {
-  const gl = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as WebGLRenderingContext | null;
-  if (!gl) throw new Error('WebGL tidak didukung');
+  const glCtx = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as WebGLRenderingContext | null;
+  if (!glCtx) throw new Error('WebGL tidak didukung');
+  const gl = glCtx;
 
-  const vs = `attribute vec4 aPos; attribute vec3 aNorm;
+  const vs = `attribute vec4 aPos; attribute vec3 aNorm; attribute vec2 aUV;
     uniform mat4 uMVP, uModel; uniform mat3 uNMat;
-    varying vec3 vN, vW;
-    void main(){ gl_Position=uMVP*aPos; vN=uNMat*aNorm; vW=(uModel*aPos).xyz; }`;
+    varying vec3 vN, vW; varying vec2 vUV;
+    void main(){ gl_Position=uMVP*aPos; vN=uNMat*aNorm; vW=(uModel*aPos).xyz; vUV=aUV; }`;
   const fs = `precision mediump float;
-    varying vec3 vN, vW;
+    varying vec3 vN, vW; varying vec2 vUV;
     uniform vec3 uCol, uCam, uL1, uL2;
-    uniform float uSel, uHov, uTime, uGhost, uEmis, uHeld;
+    uniform float uSel, uHov, uTime, uGhost, uEmis, uHeld, uUseTex;
+    uniform sampler2D uTex;
     void main(){
       vec3 n = normalize(vN);
       vec3 v = normalize(uCam - vW);
@@ -130,8 +134,13 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
       vec3 l2 = normalize(uL2 - vW);
       float d1 = max(dot(n,l1),0.0), d2 = max(dot(n,l2),0.0);
       float sp = pow(max(dot(n, normalize(l1+v)),0.0), 40.0);
-      vec3 c = uCol*0.34 + uCol*d1*0.55 + uCol*d2*0.22 + vec3(0.22)*sp;
-      c = mix(c, uCol, uEmis);
+      vec3 baseCol = uCol;
+      if(uUseTex > 0.5){
+        vec4 tCol = texture2D(uTex, vUV);
+        baseCol = tCol.rgb * uCol;
+      }
+      vec3 c = baseCol*0.34 + baseCol*d1*0.55 + baseCol*d2*0.22 + vec3(0.22)*sp;
+      c = mix(c, baseCol, uEmis);
       if(uHeld > 0.5){ c = mix(c, vec3(0.1, 0.9, 0.3), 0.4 + sin(uTime*6.0)*0.15); }
       else if(uSel > 0.5){ c = mix(c, vec3(0.45,0.62,1.0), 0.28 + sin(uTime*4.0)*0.10); }
       else if(uHov > 0.5){ c = mix(c, vec3(0.55,0.85,1.0), 0.16); }
@@ -144,7 +153,11 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
   gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
   gl.linkProgram(prog);
 
-  const A = { pos: gl.getAttribLocation(prog,'aPos'), norm: gl.getAttribLocation(prog,'aNorm') };
+  const A = {
+    pos: gl.getAttribLocation(prog,'aPos'),
+    norm: gl.getAttribLocation(prog,'aNorm'),
+    uv: gl.getAttribLocation(prog,'aUV'),
+  };
   const U = {
     mvp: gl.getUniformLocation(prog,'uMVP'), model: gl.getUniformLocation(prog,'uModel'),
     nmat: gl.getUniformLocation(prog,'uNMat'), col: gl.getUniformLocation(prog,'uCol'),
@@ -153,7 +166,41 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     hov: gl.getUniformLocation(prog,'uHov'), time: gl.getUniformLocation(prog,'uTime'),
     ghost: gl.getUniformLocation(prog,'uGhost'), emis: gl.getUniformLocation(prog,'uEmis'),
     held: gl.getUniformLocation(prog,'uHeld'),
+    useTex: gl.getUniformLocation(prog,'uUseTex'),
+    tex: gl.getUniformLocation(prog,'uTex'),
   };
+
+  const whiteTex = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, whiteTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+
+  const texCache = new Map<string, WebGLTexture>();
+  function getTexture(url?: string): WebGLTexture | null {
+    if (!url) return null;
+    if (texCache.has(url)) return texCache.get(url)!;
+    const tex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([220, 220, 220, 255]));
+    texCache.set(url, tex);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      const isPo2 = (v: number) => (v & (v - 1)) === 0;
+      if (isPo2(img.width) && isPo2(img.height)) {
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      } else {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      }
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    };
+    img.src = url;
+    return tex;
+  }
 
   /* Geometry */
   const cubeV = new Float32Array([
@@ -214,12 +261,37 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
   let curSel = false, curHov = false, curGhost = false, curHeld = false;
   let deskSurf = 0.73;
 
+  // ── Pre-baked GLTF 3D Model Buffers from Room & Furniture ──
+  type RoomPartBuf = {
+    id: string;
+    vb: WebGLBuffer;
+    ib: WebGLBuffer;
+    n: number;
+    color: V3;
+    emissive: number;
+    tex: WebGLTexture | null;
+  };
+  const roomPartBufs: RoomPartBuf[] = ROOM_PARTS.map(p => ({
+    id: p.id,
+    vb: (() => { const b = gl.createBuffer()!; gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, p.verts, gl.STATIC_DRAW); return b; })(),
+    ib: (() => { const b = gl.createBuffer()!; gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, b); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, p.indices, gl.STATIC_DRAW); return b; })(),
+    n: p.indices.length,
+    color: p.color as V3,
+    emissive: p.emissive,
+    tex: getTexture(p.textureUrl),
+  }));
+
   function draw(t: MeshT, m: Float32Array, c: V3, emis = 0) {
     const b = t === 'cube' ? cube : cyl;
     gl!.bindBuffer(gl!.ARRAY_BUFFER, b.vb);
     gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, b.ib);
     gl!.enableVertexAttribArray(A.pos); gl!.vertexAttribPointer(A.pos,3,gl!.FLOAT,false,24,0);
     gl!.enableVertexAttribArray(A.norm); gl!.vertexAttribPointer(A.norm,3,gl!.FLOAT,false,24,12);
+    if (A.uv >= 0) { gl!.disableVertexAttribArray(A.uv); gl!.vertexAttrib2f(A.uv, 0, 0); }
+    gl!.uniform1f(U.useTex, 0);
+    gl!.activeTexture(gl!.TEXTURE0);
+    gl!.bindTexture(gl!.TEXTURE_2D, whiteTex);
+    gl!.uniform1i(U.tex, 0);
     gl!.uniformMatrix4fv(U.mvp,false,mul(vpM,m));
     gl!.uniformMatrix4fv(U.model,false,m);
     gl!.uniformMatrix3fv(U.nmat,false,nMat(m));
@@ -237,6 +309,11 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, db.ib);
     gl!.enableVertexAttribArray(A.pos); gl!.vertexAttribPointer(A.pos,3,gl!.FLOAT,false,24,0);
     gl!.enableVertexAttribArray(A.norm); gl!.vertexAttribPointer(A.norm,3,gl!.FLOAT,false,24,12);
+    if (A.uv >= 0) { gl!.disableVertexAttribArray(A.uv); gl!.vertexAttrib2f(A.uv, 0, 0); }
+    gl!.uniform1f(U.useTex, 0);
+    gl!.activeTexture(gl!.TEXTURE0);
+    gl!.bindTexture(gl!.TEXTURE_2D, whiteTex);
+    gl!.uniform1i(U.tex, 0);
     gl!.uniformMatrix4fv(U.mvp,false,mul(vpM,m));
     gl!.uniformMatrix4fv(U.model,false,m);
     gl!.uniformMatrix3fv(U.nmat,false,nMat(m));
@@ -246,6 +323,39 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     gl!.uniform1f(U.time,now); gl!.uniform1f(U.ghost,curGhost?1:0);
     gl!.uniform1f(U.emis,emis); gl!.uniform1f(U.held,curHeld?1:0);
     gl!.drawElements(gl!.TRIANGLES,db.n,gl!.UNSIGNED_SHORT,0);
+  }
+
+  /** Draw a 3D room part buffer with stride 32 (pos 3, norm 3, uv 2) and optional texture. */
+  function drawRoomPart(part: RoomPartBuf, m: Float32Array, dark: boolean) {
+    gl!.bindBuffer(gl!.ARRAY_BUFFER, part.vb);
+    gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, part.ib);
+    gl!.enableVertexAttribArray(A.pos); gl!.vertexAttribPointer(A.pos,3,gl!.FLOAT,false,32,0);
+    gl!.enableVertexAttribArray(A.norm); gl!.vertexAttribPointer(A.norm,3,gl!.FLOAT,false,32,12);
+    if (A.uv >= 0) {
+      gl!.enableVertexAttribArray(A.uv);
+      gl!.vertexAttribPointer(A.uv,2,gl!.FLOAT,false,32,24);
+    }
+    gl!.uniformMatrix4fv(U.mvp,false,mul(vpM,m));
+    gl!.uniformMatrix4fv(U.model,false,m);
+    gl!.uniformMatrix3fv(U.nmat,false,nMat(m));
+    const c = dark ? ([part.color[0]*0.72, part.color[1]*0.72, part.color[2]*0.80] as V3) : part.color;
+    gl!.uniform3fv(U.col,c); gl!.uniform3fv(U.cam,camP);
+    gl!.uniform3f(U.l1,1.6,2.7,0.6); gl!.uniform3f(U.l2,-2.2,2.4,-2.0);
+    gl!.uniform1f(U.sel,0); gl!.uniform1f(U.hov,0);
+    gl!.uniform1f(U.time,now); gl!.uniform1f(U.ghost,0);
+    gl!.uniform1f(U.emis,part.emissive); gl!.uniform1f(U.held,0);
+    if (part.tex) {
+      gl!.uniform1f(U.useTex, 1);
+      gl!.activeTexture(gl!.TEXTURE0);
+      gl!.bindTexture(gl!.TEXTURE_2D, part.tex);
+      gl!.uniform1i(U.tex, 0);
+    } else {
+      gl!.uniform1f(U.useTex, 0);
+      gl!.activeTexture(gl!.TEXTURE0);
+      gl!.bindTexture(gl!.TEXTURE_2D, whiteTex);
+      gl!.uniform1i(U.tex, 0);
+    }
+    gl!.drawElements(gl!.TRIANGLES,part.n,gl!.UNSIGNED_SHORT,0);
   }
 
   /**
@@ -420,344 +530,15 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     }
   }
 
-  /* ── Ruangan ── */
+  /* ── Ruangan 3D Gaming Room ── */
   function room(dark: boolean) {
-    const wall: V3  = dark ? [0.20,0.21,0.26] : [0.88,0.86,0.82];
-    const wall2: V3 = dark ? [0.17,0.18,0.23] : [0.84,0.82,0.79];
-    const wallB: V3 = dark ? [0.18,0.19,0.24] : [0.85,0.83,0.80]; // dinding belakang (z=+4)
-    const floor: V3 = dark ? [0.16,0.16,0.19] : [0.42,0.36,0.31];
-    const trim: V3  = dark ? [0.28,0.29,0.34] : [0.96,0.94,0.92];
-    const moldC: V3 = dark ? [0.24,0.25,0.30] : [0.78,0.76,0.73];
-
-    // ── Lantai dengan ubin ──
-    draw('cube', mul(T(0,-0.01,0), S(10,0.02,10)), floor);
-    for (let x = -4; x <= 4; x++) draw('cube', mul(T(x,0.002,0), S(0.012,0.004,10)), shade(floor,0.82));
-    for (let z = -4; z <= 4; z++) draw('cube', mul(T(0,0.002,z), S(10,0.004,0.012)), shade(floor,0.82));
-
-    // ── 4 Dinding Penuh ──
-    // Depan (z = -4)
-    draw('cube', mul(T(0,1.5,-4), S(10,3,0.1)), wall);
-    // Belakang (z = +4)  ← dulunya kosong/terlihat seperti langit
-    draw('cube', mul(T(0,1.5, 4), S(10,3,0.1)), wallB);
-    // Kiri (x = -4)
-    draw('cube', mul(T(-4,1.5,0), S(0.1,3,10)), wall2);
-    // Kanan (x = +4)
-    draw('cube', mul(T( 4,1.5,0), S(0.1,3,10)), wall2);
-    // Plafon
-    draw('cube', mul(T(0,3.0,0), S(10,0.06,10)), dark ? [0.14,0.15,0.19] : [0.93,0.92,0.90]);
-
-    // ── Lis / Skirting Board (semua sisi) ──
-    draw('cube', mul(T(0,  0.05,-3.94), S(10,0.10,0.03)), shade(wall,0.75));  // depan
-    draw('cube', mul(T(0,  0.05, 3.94), S(10,0.10,0.03)), shade(wallB,0.75)); // belakang
-    draw('cube', mul(T(-3.94,0.05,0), S(0.03,0.10,10)), shade(wall2,0.75));   // kiri
-    draw('cube', mul(T( 3.94,0.05,0), S(0.03,0.10,10)), shade(wall2,0.75));   // kanan
-
-    // ── Crown Molding / Lis Plafon (semua sisi) ──
-    draw('cube', mul(T(0,  2.94,-3.94), S(10,0.06,0.04)), moldC); // depan
-    draw('cube', mul(T(0,  2.94, 3.94), S(10,0.06,0.04)), moldC); // belakang
-    draw('cube', mul(T(-3.94,2.94,0), S(0.04,0.06,10)), moldC);   // kiri
-    draw('cube', mul(T( 3.94,2.94,0), S(0.04,0.06,10)), moldC);   // kanan
-
-    // ── Panel Chair Rail / List Tengah Dinding (semua sisi) ──
-    // Depan
-    draw('cube', mul(T(0,1.0,-3.94), S(10,0.04,0.025)), shade(wall,0.80));
-    // Belakang
-    draw('cube', mul(T(0,1.0, 3.94), S(10,0.04,0.025)), shade(wallB,0.80));
-    // Kiri
-    draw('cube', mul(T(-3.94,1.0,0), S(0.025,0.04,10)), shade(wall2,0.80));
-    // Kanan
-    draw('cube', mul(T( 3.94,1.0,0), S(0.025,0.04,10)), shade(wall2,0.80));
-
-    // ══════════════════════════════════════════
-    // ── JENDELA KIRI (dinding x = -4) ──
-    // ══════════════════════════════════════════
-    const winGlassL: V3 = dark ? [0.10,0.18,0.35] : [0.60,0.82,0.96];
-    // Kaca jendela
-    draw('cube', mul(T(-3.94,1.78,-0.5), S(0.04,1.10,1.40)), winGlassL, dark?0.35:0.60);
-    // Bingkai luar jendela
-    draw('cube', mul(T(-3.93,1.78,-0.5), S(0.03,1.22,1.52)), trim);
-    // Pembagi tengah (vertikal & horizontal)
-    draw('cube', mul(T(-3.945,1.78,-0.5), S(0.025,1.10,0.025)), [0.92,0.90,0.88]); // vertikal tengah
-    draw('cube', mul(T(-3.945,1.78,-0.5), S(0.025,0.025,1.40)), [0.92,0.90,0.88]); // horizontal tengah
-    // Ambang bawah jendela (windowsill)
-    draw('cube', mul(T(-3.92,1.20,-0.5), S(0.07,0.04,1.60)), trim);
-    // Ambang atas
-    draw('cube', mul(T(-3.92,2.36,-0.5), S(0.05,0.04,1.56)), trim);
-    // Kusen kiri-kanan
-    draw('cube', mul(T(-3.92,1.78,-1.30), S(0.05,1.18,0.04)), trim);
-    draw('cube', mul(T(-3.92,1.78, 0.30), S(0.05,1.18,0.04)), trim);
-    // Tirai kiri (gorden)
-    for (let i = 0; i < 5; i++) {
-      const tz = -1.32 + i*0.04;
-      draw('cube', mul(T(-3.92,1.9, tz), S(0.03,1.6,0.028)), dark ? [0.28,0.22,0.38] : [0.72,0.58,0.82]);
+    const roomM = mul(T(ROOM_OFFSET[0], ROOM_OFFSET[1], ROOM_OFFSET[2]), S(ROOM_SCALE[0], ROOM_SCALE[1], ROOM_SCALE[2]));
+    for (const part of roomPartBufs) {
+      drawRoomPart(part, roomM, dark);
     }
-    // Tirai kanan (gorden)
-    for (let i = 0; i < 5; i++) {
-      const tz = 0.32 + i*0.04;
-      draw('cube', mul(T(-3.92,1.9, tz), S(0.03,1.6,0.028)), dark ? [0.28,0.22,0.38] : [0.72,0.58,0.82]);
-    }
-    // Rel tirai
-    draw('cube', mul(T(-3.92,2.70,-0.5), S(0.04,0.04,1.80)), [0.55,0.45,0.38]);
-
-    // ══════════════════════════════════════════
-    // ── JENDELA KANAN (dinding x = +4) ──
-    // ══════════════════════════════════════════
-    const winGlassR: V3 = dark ? [0.10,0.18,0.35] : [0.60,0.82,0.96];
-    // Kaca jendela
-    draw('cube', mul(T( 3.94,1.78, 0.5), S(0.04,1.10,1.40)), winGlassR, dark?0.35:0.60);
-    // Bingkai luar
-    draw('cube', mul(T( 3.93,1.78, 0.5), S(0.03,1.22,1.52)), trim);
-    // Pembagi tengah
-    draw('cube', mul(T( 3.945,1.78, 0.5), S(0.025,1.10,0.025)), [0.92,0.90,0.88]);
-    draw('cube', mul(T( 3.945,1.78, 0.5), S(0.025,0.025,1.40)), [0.92,0.90,0.88]);
-    // Ambang bawah
-    draw('cube', mul(T( 3.92,1.20, 0.5), S(0.07,0.04,1.60)), trim);
-    // Ambang atas
-    draw('cube', mul(T( 3.92,2.36, 0.5), S(0.05,0.04,1.56)), trim);
-    // Kusen kiri-kanan
-    draw('cube', mul(T( 3.92,1.78,-0.30), S(0.05,1.18,0.04)), trim);
-    draw('cube', mul(T( 3.92,1.78, 1.30), S(0.05,1.18,0.04)), trim);
-    // Tirai kiri
-    for (let i = 0; i < 5; i++) {
-      const tz = -0.32 - i*0.04;
-      draw('cube', mul(T( 3.92,1.9, tz), S(0.03,1.6,0.028)), dark ? [0.28,0.22,0.38] : [0.72,0.58,0.82]);
-    }
-    // Tirai kanan
-    for (let i = 0; i < 5; i++) {
-      const tz = 1.32 + i*0.04;
-      draw('cube', mul(T( 3.92,1.9, tz), S(0.03,1.6,0.028)), dark ? [0.28,0.22,0.38] : [0.72,0.58,0.82]);
-    }
-    // Rel tirai
-    draw('cube', mul(T( 3.92,2.70, 0.5), S(0.04,0.04,1.80)), [0.55,0.45,0.38]);
-
-    // ══════════════════════════════════════════
-    // ── HIASAN DINDING DEPAN (z = -4) ──
-    // ══════════════════════════════════════════
-    // Dinding depan: bidang XY → elemen tipis di Z, lebar di X & Y.
-
-    // ── Lukisan 1: Mondrian (canvas inner x[-2.47,-0.73] y[1.28,2.32]) ──
-    draw('cube', mul(T(-1.60,1.80,-3.940), S(1.80,1.10,0.025)), [0.15,0.12,0.10]); // bingkai
-    draw('cube', mul(T(-1.60,1.80,-3.930), S(1.74,1.04,0.010)), dark?[0.18,0.16,0.14]:[0.95,0.93,0.90]); // kanvas
-    // Blok warna — semua dalam batas x[-2.45,-0.75] y[1.30,2.30] z=-3.924
-    draw('cube', mul(T(-2.035,2.115,-3.924), S(0.83,0.33,0.007)), [0.88,0.18,0.12], 0.3); // A merah
-    draw('cube', mul(T(-1.165,2.115,-3.924), S(0.83,0.33,0.007)), [0.15,0.28,0.72], 0.3); // B biru
-    draw('cube', mul(T(-2.035,1.755,-3.924), S(0.83,0.31,0.007)), [0.92,0.82,0.10], 0.3); // C kuning
-    draw('cube', mul(T(-1.165,1.755,-3.924), S(0.83,0.31,0.007)), [0.20,0.55,0.35], 0.3); // D hijau
-    draw('cube', mul(T(-2.230,1.440,-3.924), S(0.44,0.24,0.007)), [0.92,0.48,0.08], 0.3); // E oranye
-    draw('cube', mul(T(-1.805,1.440,-3.924), S(0.37,0.24,0.007)), [0.55,0.18,0.62], 0.3); // F ungu
-    draw('cube', mul(T(-1.165,1.440,-3.924), S(0.83,0.24,0.007)), [0.90,0.88,0.85], 0.2); // G putih
-    // Garis hitam Mondrian (dalam batas kanvas)
-    draw('cube', mul(T(-1.600,1.930,-3.921), S(1.74,0.020,0.005)), [0.06,0.06,0.06]);
-    draw('cube', mul(T(-1.600,1.580,-3.921), S(1.74,0.020,0.005)), [0.06,0.06,0.06]);
-    draw('cube', mul(T(-1.600,1.800,-3.921), S(0.020,1.04,0.005)), [0.06,0.06,0.06]);
-    draw('cube', mul(T(-2.000,1.440,-3.921), S(0.020,0.24,0.005)), [0.06,0.06,0.06]);
-
-    // ── Lukisan 2: Ekspresionisme (canvas inner x[-0.695,-0.205] y[1.28,1.92]) ──
-    draw('cube', mul(T(-0.45,1.60,-3.940), S(0.55,0.70,0.025)), [0.12,0.10,0.08]); // bingkai
-    draw('cube', mul(T(-0.45,1.60,-3.930), S(0.49,0.64,0.010)), dark?[0.12,0.10,0.10]:[0.92,0.88,0.85]); // kanvas
-    // Sapuan horizontal — dalam batas x[-0.675,-0.225] y[1.30,1.90]
-    draw('cube', mul(T(-0.45,1.76,-3.924), S(0.40,0.22,0.007)), [0.18,0.38,0.72], 0.4);
-    draw('cube', mul(T(-0.45,1.53,-3.924), S(0.36,0.18,0.007)), [0.88,0.42,0.12], 0.4);
-    draw('cube', mul(T(-0.45,1.36,-3.924), S(0.30,0.12,0.007)), [0.92,0.82,0.10], 0.4);
-    draw('cube', mul(T(-0.37,1.60,-3.923), S(0.10,0.56,0.006)), [0.55,0.18,0.62], 0.4);
-
-    // ── Lukisan 3: Minimalis Vertikal (canvas inner x[-2.82,-2.28] y[1.29,1.95]) ──
-    draw('cube', mul(T(-2.55,1.62,-3.940), S(0.60,0.72,0.025)), [0.10,0.12,0.14]); // bingkai
-    draw('cube', mul(T(-2.55,1.62,-3.930), S(0.54,0.66,0.010)), dark?[0.08,0.10,0.14]:[0.10,0.12,0.18]); // kanvas
-    // Tiga balok vertikal — dalam batas x[-2.80,-2.30] y[1.31,1.93]
-    draw('cube', mul(T(-2.73,1.62,-3.924), S(0.10,0.58,0.007)), [0.95,0.85,0.20], 0.55);
-    draw('cube', mul(T(-2.55,1.62,-3.924), S(0.10,0.58,0.007)), [0.20,0.80,0.85], 0.55);
-    draw('cube', mul(T(-2.37,1.62,-3.924), S(0.10,0.58,0.007)), [0.90,0.35,0.20], 0.55);
-    draw('cube', mul(T(-2.55,1.33,-3.923), S(0.50,0.012,0.005)), [0.60,0.60,0.65], 0.4);
-
-    // Jam dinding
-    draw('cyl', mul(T(0.8,2.10,-3.93), S(0.38,0.03,0.38)), [0.94,0.92,0.90]);
-    draw('cyl', mul(T(0.8,2.11,-3.92), S(0.32,0.02,0.32)), dark ? [0.15,0.15,0.18] : [0.98,0.97,0.95]);
-    draw('cube', mul(T(0.8,2.11,-3.915), S(0.016,0.12,0.007)), [0.25,0.25,0.30]); // jarum menit
-    draw('cube', mul(T(0.806,2.135,-3.915), S(0.012,0.09,0.007)), [0.80,0.20,0.20]); // jarum jam
-    draw('cyl', mul(T(0.8,2.11,-3.914), S(0.028,0.02,0.028)), [0.40,0.40,0.45]); // poros
-    // Stopkontak dinding
-    draw('cube', mul(T(1.15,0.28,-3.93), S(0.11,0.14,0.02)), [0.92,0.92,0.90]);
-    draw('cube', mul(T(1.15,0.28,-3.92), S(0.05,0.06,0.01)), [0.35,0.35,0.38]);
-
-    // ══════════════════════════════════════════
-    // ── HIASAN DINDING KIRI (x = -4) ──
-    // ══════════════════════════════════════════
-    // Rak buku (sudah ada, dipercantik)
-    draw('cube', mul(T(-3.86,1.15,-2), S(0.06,1.9,0.75)), [0.42,0.28,0.19]);
-    for (let s = 0; s < 4; s++) {
-      draw('cube', mul(T(-3.72,0.45+s*0.44,-2), S(0.26,0.025,0.75)), [0.50,0.34,0.22]);
-      for (let b = 0; b < 5; b++) {
-        const bc: V3 = [[0.68,0.24,0.22],[0.22,0.46,0.30],[0.24,0.32,0.62],[0.72,0.56,0.20],[0.45,0.28,0.55]][b] as V3;
-        draw('cube', mul(T(-3.70,0.55+s*0.44,-2.28+b*0.13), S(0.14,0.18,0.055)), bc);
-      }
-    }
-    // ── Lukisan Kiri 1: Pita Warna (canvas inner y[1.96,2.44] z[1.16,1.84]) ──
-    // Dinding kiri: bidang YZ → elemen tipis di X, lebar di Y & Z.
-    draw('cube', mul(T(-3.945,2.20, 1.5), S(0.025,0.52,0.72)), [0.10,0.08,0.06]); // bingkai
-    draw('cube', mul(T(-3.935,2.20, 1.5), S(0.015,0.48,0.68)), dark?[0.08,0.06,0.12]:[0.88,0.78,0.62]); // kanvas
-    // 4 pita vertikal — dalam batas y[1.98,2.42] z[1.18,1.82] x≈-3.928
-    draw('cube', mul(T(-3.928,2.20,1.255), S(0.008,0.44,0.15)), [0.90,0.22,0.18], 0.4); // merah
-    draw('cube', mul(T(-3.928,2.20,1.420), S(0.008,0.44,0.14)), [0.95,0.80,0.10], 0.4); // kuning
-    draw('cube', mul(T(-3.928,2.20,1.590), S(0.008,0.44,0.16)), [0.15,0.45,0.85], 0.4); // biru
-    draw('cube', mul(T(-3.928,2.20,1.755), S(0.008,0.44,0.13)), [0.18,0.68,0.42], 0.4); // hijau
-
-    // ── Lukisan Kiri 2: Kotak Konsentrik (canvas inner y[1.21,1.75] z[1.99,2.41]) ──
-    draw('cube', mul(T(-3.945,1.48, 2.2), S(0.025,0.58,0.46)), [0.10,0.08,0.06]); // bingkai
-    draw('cube', mul(T(-3.935,1.48, 2.2), S(0.015,0.54,0.42)), dark?[0.06,0.08,0.10]:[0.12,0.14,0.20]); // kanvas
-    // Kotak konsentrik — dalam batas y[1.25,1.71] z[2.03,2.37]
-    draw('cube', mul(T(-3.927,1.48,2.20), S(0.008,0.46,0.34)), [0.22,0.65,0.72], 0.5); // teal luar
-    draw('cube', mul(T(-3.926,1.48,2.20), S(0.008,0.36,0.26)), [0.92,0.78,0.18], 0.5); // emas tengah
-    draw('cube', mul(T(-3.925,1.48,2.20), S(0.008,0.24,0.16)), [0.88,0.25,0.22], 0.5); // merah dalam
-    draw('cube', mul(T(-3.924,1.48,2.20), S(0.008,0.12,0.08)), [0.95,0.90,0.85], 0.6); // putih inti
-
-    // Rak kecil dekoratif di kiri atas
-    draw('cube', mul(T(-3.87,2.40, 2.8), S(0.05,0.04,0.60)), [0.48,0.32,0.22]);
-    draw('cube', mul(T(-3.87,2.20, 2.8), S(0.05,0.36,0.04)), [0.48,0.32,0.22]);
-    // Dekorasi di atas rak kecil
-    draw('cyl', mul(T(-3.85,2.46, 2.65), S(0.08,0.12,0.08)), [0.55,0.33,0.22]); // pot kecil
-    draw('cyl', mul(T(-3.85,2.54, 2.65), S(0.09,0.04,0.09)), [0.28,0.20,0.14]);
-    draw('cyl', mul(T(-3.85,2.60, 2.65), S(0.06,0.10,0.06)), [0.22,0.52,0.28]); // tanaman kecil
-    draw('cube', mul(T(-3.85,2.46, 3.00), S(0.06,0.14,0.06)), [0.35,0.28,0.22]); // buku kecil
-    draw('cube', mul(T(-3.85,2.46, 3.06), S(0.06,0.16,0.06)), [0.55,0.42,0.25]);
-
-    // ══════════════════════════════════════════
-    // ── HIASAN DINDING KANAN (x = +4) ──
-    // ══════════════════════════════════════════
-    // ── Lukisan Kanan 1: Grid Warna (canvas inner y[1.47,2.23] z[-3.03,-1.97]) ──
-    // Dinding kanan: bidang YZ → elemen tipis di X, lebar di Y & Z.
-    draw('cube', mul(T( 3.945,1.85,-2.5), S(0.025,0.80,1.10)), [0.08,0.06,0.05]); // bingkai
-    draw('cube', mul(T( 3.935,1.85,-2.5), S(0.015,0.76,1.06)), dark?[0.06,0.05,0.08]:[0.94,0.92,0.90]); // kanvas
-    // Grid 3x4 — row y[1.61,1.85,2.09] col z[-2.89,-2.64,-2.39,-2.14], tiap sel S(0.010,0.22,0.20)
-    { const gColors: V3[] = [[0.90,0.22,0.18],[0.18,0.45,0.88],[0.92,0.78,0.08],[0.18,0.72,0.45],[0.72,0.18,0.62],[0.92,0.52,0.12],[0.12,0.55,0.80],[0.85,0.30,0.42],[0.28,0.88,0.55],[0.55,0.20,0.88],[0.88,0.88,0.22],[0.18,0.62,0.72]];
-      const gy = [1.61,1.85,2.09], gz = [-2.89,-2.64,-2.39,-2.14];
-      for (let gi = 0; gi < 3; gi++) for (let gj = 0; gj < 4; gj++)
-        draw('cube', mul(T(3.928,gy[gi],gz[gj]), S(0.010,0.22,0.20)), gColors[gi*4+gj], 0.35);
-    }
-    // Garis pemisah — sepenuhnya dalam batas canvas
-    draw('cube', mul(T(3.929,1.73,-2.50), S(0.011,0.010,1.00)), [0.10,0.10,0.10]); // horiz bawah
-    draw('cube', mul(T(3.929,1.97,-2.50), S(0.011,0.010,1.00)), [0.10,0.10,0.10]); // horiz atas
-    draw('cube', mul(T(3.929,1.85,-2.765), S(0.011,0.72,0.010)), [0.10,0.10,0.10]); // vert 1
-    draw('cube', mul(T(3.929,1.85,-2.515), S(0.011,0.72,0.010)), [0.10,0.10,0.10]); // vert 2
-    draw('cube', mul(T(3.929,1.85,-2.265), S(0.011,0.72,0.010)), [0.10,0.10,0.10]); // vert 3
-
-    // Rak apung kecil kanan atas
-    draw('cube', mul(T( 3.87,2.25,-0.8), S(0.05,0.04,0.70)), [0.48,0.32,0.22]);
-    draw('cube', mul(T( 3.87,2.05,-0.8), S(0.05,0.36,0.04)), [0.48,0.32,0.22]);
-    // Dekorasi rak kanan
-    draw('cyl', mul(T( 3.85,2.31,-0.65), S(0.09,0.14,0.09)), [0.62,0.38,0.25]); // vas
-    draw('cyl', mul(T( 3.85,2.39,-0.65), S(0.05,0.08,0.05)), [0.55,0.22,0.18]);
-    for (let i = 0; i < 4; i++) { // bunga kecil
-      const a = i/4*Math.PI*2;
-      draw('cube', mul(mul(T(3.85+Math.cos(a)*0.04, 2.46+((i%2)*0.03), -0.65+Math.sin(a)*0.04), RY(a)), S(0.05,0.10,0.03)), [0.82+((i%2)*0.1), 0.42, 0.55]);
-    }
-    draw('cube', mul(T( 3.85,2.30,-1.10), S(0.06,0.18,0.06)), [0.22,0.36,0.62]); // buku
-    draw('cube', mul(T( 3.85,2.30,-1.18), S(0.06,0.20,0.06)), [0.62,0.28,0.22]);
-    draw('cube', mul(T( 3.85,2.30,-1.26), S(0.06,0.15,0.06)), [0.30,0.55,0.38]);
-
-    // ── Lukisan Kanan 3: Lansekap Malam (canvas inner y[1.46,2.14] z[2.23,2.77]) ──
-    draw('cube', mul(T( 3.945,1.80,2.50), S(0.025,0.72,0.58)), [0.10,0.08,0.06]); // bingkai
-    draw('cube', mul(T( 3.935,1.80,2.50), S(0.015,0.68,0.54)), dark?[0.05,0.08,0.14]:[0.12,0.16,0.28]); // kanvas
-    // Layer lansekap — dalam batas y[1.48,2.12] z[2.25,2.75]
-    draw('cube', mul(T(3.928,2.05,2.50), S(0.010,0.14,0.50)), [0.12,0.12,0.28], 0.3); // langit gelap
-    draw('cube', mul(T(3.928,1.90,2.50), S(0.010,0.12,0.50)), [0.45,0.20,0.55], 0.3); // ungu senja
-    draw('cube', mul(T(3.928,1.77,2.50), S(0.010,0.10,0.50)), [0.85,0.62,0.08], 0.3); // kuning cakrawala
-    draw('cube', mul(T(3.928,1.65,2.50), S(0.010,0.10,0.50)), [0.62,0.35,0.18], 0.3); // oranye
-    draw('cube', mul(T(3.928,1.53,2.50), S(0.010,0.10,0.50)), [0.18,0.25,0.18], 0.3); // tanah
-    draw('cube', mul(T(3.927,1.99,2.30), S(0.011,0.10,0.10)), [0.98,0.95,0.80], 0.6); // bulan
-    draw('cube', mul(T(3.927,1.60,2.67), S(0.011,0.24,0.04)), [0.06,0.08,0.06], 0.4); // pohon batang
-    draw('cube', mul(T(3.927,1.72,2.67), S(0.011,0.04,0.12)), [0.06,0.08,0.06], 0.4); // pohon mahkota
-
-    // ══════════════════════════════════════════
-    // ── HIASAN DINDING BELAKANG (z = +4) ──
-    // ══════════════════════════════════════════
-    // Panel wainscoting / bingkai besar
-    draw('cube', mul(T(0,0.52, 3.93), S(9.6,0.92,0.04)), shade(wallB, 0.93));
-    // Vertical divider panel
-    for (let pi = -3; pi <= 3; pi++) {
-      if (pi === 0) continue;
-      draw('cube', mul(T(pi*1.2,0.52, 3.935), S(0.04,0.92,0.02)), shade(wallB, 0.82));
-    }
-    // Lis horizontal panel
-    draw('cube', mul(T(0,1.0, 3.94), S(9.6,0.04,0.025)), shade(wallB,0.80));
-    // ── Lukisan Tengah: Kotak Konsentrik Kandinsky (canvas inner x[-0.72,0.72] y[1.48,2.42]) ──
-    // Dinding belakang: bidang XY → elemen tipis di Z, lebar di X & Y.
-    draw('cube', mul(T(0,1.95,3.940), S(1.50,1.00,0.030)), [0.12,0.10,0.08]); // bingkai
-    draw('cube', mul(T(0,1.95,3.930), S(1.44,0.94,0.015)), dark?[0.06,0.05,0.10]:[0.08,0.08,0.12]); // kanvas
-    // Kotak konsentrik — dalam batas x[-0.70,0.70] y[1.50,2.40]
-    draw('cube', mul(T(0.00,1.95,3.923), S(1.30,0.84,0.007)), [0.88,0.65,0.12], 0.35); // emas luar
-    draw('cube', mul(T(0.00,1.95,3.922), S(0.96,0.62,0.007)), [0.22,0.55,0.88], 0.40); // biru
-    draw('cube', mul(T(0.00,1.95,3.921), S(0.62,0.40,0.007)), [0.88,0.22,0.35], 0.45); // merah
-    draw('cube', mul(T(0.00,1.95,3.920), S(0.28,0.20,0.007)), [0.95,0.90,0.80], 0.55); // putih inti
-    // Aksen bar — dalam batas canvas
-    draw('cube', mul(T(-0.42,2.22,3.919), S(0.08,0.30,0.006)), [0.92,0.42,0.10], 0.5);
-    draw('cube', mul(T( 0.42,1.68,3.919), S(0.08,0.28,0.006)), [0.22,0.82,0.55], 0.5);
-    // Titik aksen kecil — dalam batas x[-0.70,0.70] y[1.50,2.40]
-    draw('cube', mul(T(-0.58,2.28,3.918), S(0.08,0.08,0.006)), [0.95,0.85,0.15], 0.6);
-    draw('cube', mul(T( 0.55,2.28,3.918), S(0.08,0.08,0.006)), [0.15,0.88,0.72], 0.6);
-    draw('cube', mul(T(-0.58,1.62,3.918), S(0.06,0.06,0.006)), [0.88,0.35,0.15], 0.6);
-    draw('cube', mul(T( 0.58,1.62,3.918), S(0.06,0.06,0.006)), [0.55,0.15,0.88], 0.6);
-
-    // ── Lukisan Kiri Belakang: Ekspresionisme (canvas inner x[-2.56,-1.84] y[1.60,2.16]) ──
-    draw('cube', mul(T(-2.2,1.88,3.940), S(0.78,0.62,0.030)), [0.12,0.10,0.08]); // bingkai
-    draw('cube', mul(T(-2.2,1.88,3.930), S(0.72,0.56,0.015)), dark?[0.10,0.08,0.06]:[0.92,0.88,0.84]); // kanvas
-    // Sapuan horizontal lebar — dalam batas x[-2.54,-1.86] y[1.62,2.14]
-    draw('cube', mul(T(-2.20,2.05,3.924), S(0.60,0.16,0.007)), [0.18,0.42,0.80], 0.4);
-    draw('cube', mul(T(-2.20,1.88,3.924), S(0.58,0.14,0.007)), [0.88,0.35,0.18], 0.4);
-    draw('cube', mul(T(-2.20,1.73,3.924), S(0.54,0.12,0.007)), [0.88,0.78,0.10], 0.4);
-    draw('cube', mul(T(-2.10,1.88,3.923), S(0.06,0.48,0.006)), [0.50,0.15,0.60], 0.5); // aksen vertikal
-
-    // ── Lukisan Kanan Belakang: Pop Art 2×2 (canvas inner x[1.84,2.56] y[1.60,2.16]) ──
-    draw('cube', mul(T( 2.2,1.88,3.940), S(0.78,0.62,0.030)), [0.12,0.10,0.08]); // bingkai
-    draw('cube', mul(T( 2.2,1.88,3.930), S(0.72,0.56,0.015)), dark?[0.10,0.08,0.06]:[0.92,0.88,0.84]); // kanvas
-    // Blok 2×2 — dalam batas x[1.86,2.54] y[1.62,2.14]
-    draw('cube', mul(T( 2.02,2.03,3.924), S(0.32,0.22,0.007)), [0.92,0.18,0.28], 0.4); // merah kiri atas
-    draw('cube', mul(T( 2.38,2.03,3.924), S(0.32,0.22,0.007)), [0.10,0.35,0.88], 0.4); // biru kanan atas
-    draw('cube', mul(T( 2.02,1.73,3.924), S(0.32,0.22,0.007)), [0.92,0.82,0.10], 0.4); // kuning kiri bawah
-    draw('cube', mul(T( 2.38,1.73,3.924), S(0.32,0.22,0.007)), [0.18,0.72,0.38], 0.4); // hijau kanan bawah
-    // Garis pemisah
-    draw('cube', mul(T( 2.20,1.88,3.922), S(0.015,0.50,0.006)), [0.08,0.08,0.08]);
-    draw('cube', mul(T( 2.20,1.88,3.922), S(0.64,0.015,0.006)), [0.08,0.08,0.08]);
-    // Meja konsol di dinding belakang
-    draw('cube', mul(T(0,0.44, 3.78), S(1.20,0.04,0.40)), [0.48,0.34,0.22]);
-    draw('cube', mul(T(0,0.22, 3.78), S(1.16,0.40,0.36)), shade([0.48,0.34,0.22], 0.80));
-    // Dekorasi di meja konsol
-    draw('cyl', mul(T(-0.35,0.50, 3.76), S(0.12,0.22,0.12)), [0.55,0.33,0.22]);  // vas
-    draw('cyl', mul(T(-0.35,0.61, 3.76), S(0.09,0.02,0.09)), [0.28,0.20,0.14]);
-    for (let i = 0; i < 5; i++) {  // bunga
-      const a = i/5*Math.PI*2;
-      draw('cube', mul(mul(T(-0.35+Math.cos(a)*0.06, 0.66+((i%3)*0.04), 3.76+Math.sin(a)*0.06), RY(a)), S(0.05,0.14,0.03)), [0.85,0.45,0.55]);
-    }
-    draw('cube', mul(T( 0.20,0.50, 3.75), S(0.06,0.20,0.06)), [0.22,0.35,0.62]); // buku kecil
-    draw('cube', mul(T( 0.28,0.50, 3.75), S(0.06,0.18,0.06)), [0.62,0.25,0.22]);
-    draw('cyl', mul(T( 0.45,0.52, 3.75), S(0.08,0.16,0.08)), [0.38,0.38,0.42]);  // lilin
-    draw('cyl', mul(T( 0.45,0.60, 3.75), S(0.02,0.02,0.02)), [1.0,0.85,0.40], 0.9); // nyala lilin
-
-    // ── Lampu Plafon ──
-    draw('cube', mul(T(0,2.93,-1.2), S(1.1,0.06,0.28)), [1,0.98,0.92], 0.9);
-    draw('cube', mul(T(0,2.97,-1.2), S(1.2,0.04,0.34)), [0.8,0.8,0.84]);
-
-    // ── Tanaman sudut ──
-    draw('cyl', mul(T(3.4,0.16,-3.4), S(0.30,0.32,0.30)), [0.55,0.33,0.22]);
-    draw('cyl', mul(T(3.4,0.33,-3.4), S(0.31,0.04,0.31)), [0.30,0.22,0.16]);
-    for (let i = 0; i < 7; i++) {
-      const a = i/7*Math.PI*2;
-      draw('cube', mul(mul(T(3.4+Math.cos(a)*0.13, 0.52+((i%3)*0.09), -3.4+Math.sin(a)*0.13), RY(a)), S(0.10,0.34,0.05)), [0.20,0.55+((i%3)*0.06),0.24]);
-    }
-    // Tanaman sudut kiri-belakang
-    draw('cyl', mul(T(-3.4,0.16, 3.4), S(0.28,0.30,0.28)), [0.48,0.30,0.20]);
-    draw('cyl', mul(T(-3.4,0.32, 3.4), S(0.29,0.04,0.29)), [0.28,0.20,0.14]);
-    for (let i = 0; i < 6; i++) {
-      const a = i/6*Math.PI*2;
-      draw('cube', mul(mul(T(-3.4+Math.cos(a)*0.11, 0.48+((i%3)*0.08), 3.4+Math.sin(a)*0.11), RY(a)), S(0.09,0.30,0.04)), [0.18,0.50+((i%3)*0.05),0.22]);
-    }
-
-    // ── Karpet ──
-    draw('cube', mul(T(0,0.006,-1.1), S(2.6,0.012,2.0)), dark ? [0.22,0.24,0.30] : [0.55,0.58,0.66]);
-    draw('cube', mul(T(0,0.010,-1.1), S(2.4,0.012,1.8)), dark ? [0.25,0.27,0.34] : [0.62,0.65,0.72]);
-    // Motif karpet
-    draw('cube', mul(T(0,0.013,-1.1), S(2.2,0.006,0.020)), dark ? [0.30,0.32,0.40] : [0.70,0.72,0.80]);
-    draw('cube', mul(T(0,0.013,-1.1), S(0.020,0.006,1.6)), dark ? [0.30,0.32,0.40] : [0.70,0.72,0.80]);
+    // Karpet elegan di bawah area meja & kursi kerja
+    draw('cube', mul(T(0,0.006,-1.1), S(2.2,0.010,1.8)), dark ? [0.18,0.20,0.26] : [0.52,0.55,0.62]);
+    draw('cube', mul(T(0,0.010,-1.1), S(2.0,0.010,1.6)), dark ? [0.22,0.24,0.30] : [0.58,0.61,0.68]);
   }
 
   /* ── PC + kabel (mengikuti posisi objek secara dinamis) ── */
@@ -783,19 +564,19 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     cable([kb.position.x, kb.position.y, kb.position.z - kb.scale.z/2], [deskBack[0]-0.06, deskBack[1], deskBack[2]], 0.05, cc, 16);
     // kabel mouse → CPU
     cable([ms.position.x, ms.position.y, ms.position.z - ms.scale.z/2], [deskBack[0]+0.06, deskBack[1], deskBack[2]], 0.05, cc, 16);
-    // kabel listrik CPU → stopkontak
-    cable(pcBack, [1.15, 0.24, -3.90], 0.08, [0.09,0.09,0.11], 20);
-    // kabel lampu → stopkontak
+    // kabel listrik CPU → stopkontak dinding belakang
+    cable(pcBack, [0.40, 0.24, -2.95], 0.08, [0.09,0.09,0.11], 20);
+    // kabel lampu → stopkontak dinding belakang
     const lamp = f.find(i => i.type === 'lamp')!;
-    cable([lamp.position.x, surf + 0.01, lamp.position.z], [1.15, 0.24, -3.90], 0.12, [0.55,0.45,0.30], 22);
+    cable([lamp.position.x, surf + 0.01, lamp.position.z], [0.40, 0.24, -2.95], 0.12, [0.55,0.45,0.30], 22);
   }
 
-  /* ── Penggaris tinggi pada dinding ── */
+  /* ── Penggaris tinggi pada dinding kiri ── */
   function ruler() {
     for (let h = 0; h <= 18; h++) {
       const y = h*0.1;
       const major = h % 5 === 0;
-      draw('cube', mul(T(-3.94, y, -0.6), S(0.02, major?0.012:0.005, major?0.22:0.12)), major ? [0.95,0.75,0.25] : [0.62,0.62,0.66]);
+      draw('cube', mul(T(-2.26, y, -1.5), S(0.02, major?0.012:0.005, major?0.22:0.12)), major ? [0.95,0.75,0.25] : [0.62,0.62,0.66]);
     }
   }
 

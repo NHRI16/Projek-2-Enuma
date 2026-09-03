@@ -536,9 +536,13 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     for (const part of roomPartBufs) {
       drawRoomPart(part, roomM, dark);
     }
-    // Karpet elegan di bawah area meja & kursi kerja
-    draw('cube', mul(T(0,0.006,-1.1), S(2.2,0.010,1.8)), dark ? [0.18,0.20,0.26] : [0.52,0.55,0.62]);
-    draw('cube', mul(T(0,0.010,-1.1), S(2.0,0.010,1.6)), dark ? [0.22,0.24,0.30] : [0.58,0.61,0.68]);
+    // Karpet gaming elegan di bawah area meja & kursi kerja
+    draw('cube', mul(T(0,0.006,-1.15), S(2.3,0.010,2.0)), dark ? [0.10,0.11,0.14] : [0.15,0.16,0.20]);
+    draw('cube', mul(T(0,0.010,-1.15), S(2.1,0.010,1.8)), dark ? [0.14,0.15,0.19] : [0.20,0.22,0.28]);
+    // Stopkontak listrik pada dinding belakang
+    draw('cube', mul(T(0.40,0.24,-2.28), S(0.12,0.14,0.02)), [0.22,0.22,0.26]);
+    draw('cube', mul(T(0.38,0.24,-2.27), S(0.025,0.025,0.01)), [0.08,0.08,0.10]);
+    draw('cube', mul(T(0.42,0.24,-2.27), S(0.025,0.025,0.01)), [0.08,0.08,0.10]);
   }
 
   /* ── PC + kabel (mengikuti posisi objek secara dinamis) ── */
@@ -565,10 +569,10 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     // kabel mouse → CPU
     cable([ms.position.x, ms.position.y, ms.position.z - ms.scale.z/2], [deskBack[0]+0.06, deskBack[1], deskBack[2]], 0.05, cc, 16);
     // kabel listrik CPU → stopkontak dinding belakang
-    cable(pcBack, [0.40, 0.24, -2.95], 0.08, [0.09,0.09,0.11], 20);
+    cable(pcBack, [0.40, 0.24, -2.28], 0.08, [0.09,0.09,0.11], 20);
     // kabel lampu → stopkontak dinding belakang
     const lamp = f.find(i => i.type === 'lamp')!;
-    cable([lamp.position.x, surf + 0.01, lamp.position.z], [0.40, 0.24, -2.95], 0.12, [0.55,0.45,0.30], 22);
+    cable([lamp.position.x, surf + 0.01, lamp.position.z], [0.40, 0.24, -2.28], 0.12, [0.55,0.45,0.30], 22);
   }
 
   /* ── Penggaris tinggi pada dinding kiri ── */
@@ -576,7 +580,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     for (let h = 0; h <= 18; h++) {
       const y = h*0.1;
       const major = h % 5 === 0;
-      draw('cube', mul(T(-2.26, y, -1.5), S(0.02, major?0.012:0.005, major?0.22:0.12)), major ? [0.95,0.75,0.25] : [0.62,0.62,0.66]);
+      draw('cube', mul(T(-2.63, y, -1.5), S(0.02, major?0.012:0.005, major?0.22:0.12)), major ? [0.95,0.75,0.25] : [0.62,0.62,0.66]);
     }
   }
 

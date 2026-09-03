@@ -328,8 +328,8 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
         case 'rotR': it.rotation.y += R; break;
       }
       if (it.type !== 'desk') {
-        it.position.x = clamp(it.position.x, -1.9, 1.9);
-        it.position.z = clamp(it.position.z, -2.6, 0.4);
+        it.position.x = clamp(it.position.x, -2.1, 2.1);
+        it.position.z = clamp(it.position.z, -1.90, 2.40);
       }
       if (it.type === 'desk' && it.position.y !== before) {
         const d = it.position.y - before;
@@ -518,7 +518,8 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
         if (w.keys['s'] || w.keys['arrowdown']) { w.camX -= sy * sp; w.camZ -= cy * sp; }
         if (w.keys['a']) { w.camX += cy * sp; w.camZ -= sy * sp; }
         if (w.keys['d']) { w.camX -= cy * sp; w.camZ += sy * sp; }
-        w.camX = clamp(w.camX, -3.6, 3.6); w.camZ = clamp(w.camZ, -3.4, 3.6);
+        // Batas dinding ruangan: X ±2.34, Z dari -1.94 (belakang) s/d +2.62 (depan)
+        w.camX = clamp(w.camX, -2.34, 2.34); w.camZ = clamp(w.camZ, -1.94, 2.62);
       }
 
       // ── Gerak Mobile (joystick) ──
@@ -531,7 +532,8 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
           const sy = Math.sin(w.yaw), cy = Math.cos(w.yaw);
           w.camX += (sy * ny + cy * (-nx)) * sp;
           w.camZ += (cy * ny + sy * nx) * sp;
-          w.camX = clamp(w.camX, -3.6, 3.6); w.camZ = clamp(w.camZ, -3.4, 3.6);
+          // Batas dinding ruangan (mobile): X ±2.34, Z dari -1.94 s/d +2.62
+          w.camX = clamp(w.camX, -2.34, 2.34); w.camZ = clamp(w.camZ, -1.94, 2.62);
         }
         if (jl.active) {
           const sens = w.sens / 6000 * 60;
@@ -606,8 +608,8 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
           if (hit) {
             // Meja fixed horizontal: hanya izinkan update X/Z untuk bukan meja
             if (it.type !== 'desk') {
-              it.position.x = hit[0];
-              it.position.z = hit[2];
+              it.position.x = clamp(hit[0], -2.1, 2.1);
+              it.position.z = clamp(hit[2], -1.90, 2.40);
             }
             // Untuk meja: X/Z tidak berubah, hanya Y via scroll
           }

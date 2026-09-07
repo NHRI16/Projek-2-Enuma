@@ -82,7 +82,7 @@ export function pickBox(it: FurnitureItem): { p: V3; h: V3 } {
   let sx = it.scale.x, sy = it.scale.y, sz = it.scale.z;
   let cy = it.position.y;
   switch (it.type) {
-    case 'chair':    sy = 0.85; cy = it.position.y + 0.18; sx = it.scale.x + 0.12; sz = it.scale.z + 0.12; break;
+    case 'chair':    sy = 1.12 * ((it.position.y + it.scale.y / 2) / (CHAIR_HEIGHT * 0.40)); cy = sy / 2; sx = it.scale.x; sz = it.scale.z; break;
     case 'monitor':  sy = it.scale.y + 0.28; cy = it.position.y - 0.08; sz = 0.18; break;
     case 'keyboard': sy = 0.07; sx += 0.06; sz += 0.06; break;
     case 'mouse':    sy = 0.07; sx = 0.28; sz = 0.28; break;
@@ -434,9 +434,9 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
       }
       case 'chair': {
         // ── Full GLTF 3D Gaming Chair (Racing Bucket Seat + Lumbar + Base) ──
-        const csx    = (sc.x + 0.16) / CHAIR_WIDTH;
-        const csy    = (p.y + 0.05) / (CHAIR_HEIGHT * 0.40);
-        const csz    = (sc.z + 0.16) / CHAIR_DEPTH;
+        const csx    = sc.x / CHAIR_WIDTH;
+        const csy    = (p.y + sc.y / 2) / (CHAIR_HEIGHT * 0.40);
+        const csz    = sc.z / CHAIR_DEPTH;
         const normT  = T(CHAIR_NORM_OFFSET[0], CHAIR_NORM_OFFSET[1], CHAIR_NORM_OFFSET[2]);
         const chairM = mul(mul(mul(T(p.x, 0, p.z), RY(r)), S(csx, csy, csz)), normT);
         for (const part of chairPartBufs) {

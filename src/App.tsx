@@ -587,6 +587,18 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
             if (it.position.y < targetMinY) it.position.y = targetMinY;
           }
         });
+        const chairItem = w.furniture.find(f => f.type === 'chair');
+        if (chairItem) {
+          const chairHalfW = chairItem.scale.x / 2;
+          const chairHalfD = chairItem.scale.z / 2;
+          const inDeskX = chairItem.position.x > deskMinX - chairHalfW && chairItem.position.x < deskMaxX + chairHalfW;
+          if (inDeskX) {
+            const minZ = deskMaxZ + chairHalfD + 0.01;
+            if (chairItem.position.z < minZ) {
+              chairItem.position.z = minZ;
+            }
+          }
+        }
         prevDesk = { x: desk.position.x, y: desk.position.y, z: desk.position.z };
       }
 
@@ -609,7 +621,15 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
             // Meja fixed horizontal: hanya izinkan update X/Z untuk bukan meja
             if (it.type !== 'desk') {
               it.position.x = clamp(hit[0], -2.1, 2.1);
-              it.position.z = clamp(hit[2], -1.90, 2.40);
+              if (it.type === 'chair') {
+                const chairHalfW = it.scale.x / 2;
+                const chairHalfD = it.scale.z / 2;
+                const inDeskX = deskItem && (it.position.x > (deskItem.position.x - deskItem.scale.x / 2) - chairHalfW && it.position.x < (deskItem.position.x + deskItem.scale.x / 2) + chairHalfW);
+                const minZ = (deskItem && inDeskX) ? (deskItem.position.z + deskItem.scale.z / 2 + chairHalfD + 0.01) : -1.90;
+                it.position.z = clamp(hit[2], minZ, 2.40);
+              } else {
+                it.position.z = clamp(hit[2], -1.90, 2.40);
+              }
             }
             // Untuk meja: X/Z tidak berubah, hanya Y via scroll
           }

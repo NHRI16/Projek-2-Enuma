@@ -65,13 +65,7 @@ const lookDir = (ex: number, ey: number, ez: number, yaw: number, pitch: number)
 };
 const nMat = (m: Float32Array) => new Float32Array([m[0],m[1],m[2], m[4],m[5],m[6], m[8],m[9],m[10]]);
 const hex = (h: string): V3 => { const v = parseInt(h.replace('#',''),16); return [(v>>16&255)/255,(v>>8&255)/255,(v&255)/255]; };
-/** Matriks rotasi dari tiga vektor basis ortogonal (kolom = arah lokal X, Y, Z di ruang dunia) */
-const mkRot = (lx: V3, ly: V3, lz: V3): Float32Array => new Float32Array([
-  lx[0], lx[1], lx[2], 0,
-  ly[0], ly[1], ly[2], 0,
-  lz[0], lz[1], lz[2], 0,
-  0,     0,     0,     1,
-]);
+
 
 
 
@@ -190,6 +184,8 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
       const isPo2 = (v: number) => (v & (v - 1)) === 0;
       if (isPo2(img.width) && isPo2(img.height)) {
         gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       } else {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -358,51 +354,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     gl!.drawElements(gl!.TRIANGLES,part.n,gl!.UNSIGNED_SHORT,0);
   }
 
-  /**
-   * Segmen kabel: menggambar silinder 3D yang terorientasi dari titik a ke b.
-   * Menggunakan Gram-Schmidt untuk membangun frame lokal sehingga sumbu-Y
-   * silinder sejajar dengan arah kabel.
-   */
-  function cableSegment(a: V3, b: V3, r: number, col: V3) {
-    const dx = b[0]-a[0], dy = b[1]-a[1], dz = b[2]-a[2];
-    const len = Math.hypot(dx, dy, dz);
-    if (len < 0.001) return;
-    // Arah kabel = sumbu-Y lokal
-    const ly: V3 = [dx/len, dy/len, dz/len];
-    // Pilih vektor "atas" yang tidak sejajar dengan ly
-    const up: V3 = Math.abs(ly[1]) < 0.85 ? [0, 1, 0] : [1, 0, 0];
-    // Sumbu-X lokal = cross(ly, up), dinormalisasi
-    const lxr: V3 = [
-      ly[1]*up[2] - ly[2]*up[1],
-      ly[2]*up[0] - ly[0]*up[2],
-      ly[0]*up[1] - ly[1]*up[0],
-    ];
-    const lxl = Math.hypot(lxr[0], lxr[1], lxr[2]) || 1;
-    const lx: V3 = [lxr[0]/lxl, lxr[1]/lxl, lxr[2]/lxl];
-    // Sumbu-Z lokal = cross(lx, ly)
-    const lz: V3 = [
-      lx[1]*ly[2] - lx[2]*ly[1],
-      lx[2]*ly[0] - lx[0]*ly[2],
-      lx[0]*ly[1] - lx[1]*ly[0],
-    ];
-    const mx = (a[0]+b[0])/2, my = (a[1]+b[1])/2, mz = (a[2]+b[2])/2;
-    draw('cyl', mul(mul(T(mx,my,mz), mkRot(lx,ly,lz)), S(r*2, len, r*2)), col);
-  }
 
-  /** Kabel catenary 3D: rangkaian silinder terorientasi yang melengkung */
-  function cable(a: V3, b: V3, sag: number, col: V3, n = 16) {
-    const r = 0.006; // radius kabel
-    let prev: V3 = a;
-    for (let i = 1; i <= n; i++) {
-      const t = i / n;
-      const x = a[0] + (b[0]-a[0]) * t;
-      const z = a[2] + (b[2]-a[2]) * t;
-      const y = a[1] + (b[1]-a[1]) * t - Math.sin(Math.PI * t) * sag;
-      const cur: V3 = [x, y, z];
-      cableSegment(prev, cur, r, col);
-      prev = cur;
-    }
-  }
 
   /* ── Objek furnitur (semua bagian mengikuti rotasi induk) ── */
   function item(it: FurnitureItem, ghost = false) {
@@ -539,50 +491,12 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
     // Karpet gaming elegan di bawah area meja & kursi kerja
     draw('cube', mul(T(0,0.006,-1.15), S(2.3,0.010,2.0)), dark ? [0.10,0.11,0.14] : [0.15,0.16,0.20]);
     draw('cube', mul(T(0,0.010,-1.15), S(2.1,0.010,1.8)), dark ? [0.14,0.15,0.19] : [0.20,0.22,0.28]);
-    // Stopkontak listrik pada dinding belakang
-    draw('cube', mul(T(0.40,0.24,-2.28), S(0.12,0.14,0.02)), [0.22,0.22,0.26]);
-    draw('cube', mul(T(0.38,0.24,-2.27), S(0.025,0.025,0.01)), [0.08,0.08,0.10]);
-    draw('cube', mul(T(0.42,0.24,-2.27), S(0.025,0.025,0.01)), [0.08,0.08,0.10]);
+
   }
 
-  /* ── PC + kabel (mengikuti posisi objek secara dinamis) ── */
-  function desktopSetup(f: FurnitureItem[]) {
-    const desk = f.find(i => i.type === 'desk')!;
-    const mon = f.find(i => i.type === 'monitor')!;
-    const kb = f.find(i => i.type === 'keyboard')!;
-    const ms = f.find(i => i.type === 'mouse')!;
-    const surf = deskSurfaceY(desk);
-    const dsx = desk.scale.x / DESK_WIDTH;
 
-    // Lokasi Gaming PC Tower di atas meja
-    const pcTop: V3 = [desk.position.x - 0.57 * dsx, surf + 0.55, desk.position.z - 0.05];
-    const pcBack: V3 = [desk.position.x - 0.57 * dsx, surf + 0.20, desk.position.z - 0.22];
 
-    const cc: V3 = [0.10,0.10,0.12];
-    // kabel monitor → belakang meja → CPU
-    const monBase: V3 = [mon.position.x, mon.position.y - mon.scale.y/2 - 0.16, mon.position.z + 0.02];
-    const deskBack: V3 = [mon.position.x, surf - 0.02, desk.position.z - desk.scale.z/2 + 0.04];
-    cable(monBase, deskBack, 0.02, cc, 8);
-    cable(deskBack, pcTop, 0.10, cc, 18);
-    // kabel keyboard → CPU
-    cable([kb.position.x, kb.position.y, kb.position.z - kb.scale.z/2], [deskBack[0]-0.06, deskBack[1], deskBack[2]], 0.05, cc, 16);
-    // kabel mouse → CPU
-    cable([ms.position.x, ms.position.y, ms.position.z - ms.scale.z/2], [deskBack[0]+0.06, deskBack[1], deskBack[2]], 0.05, cc, 16);
-    // kabel listrik CPU → stopkontak dinding belakang
-    cable(pcBack, [0.40, 0.24, -2.28], 0.08, [0.09,0.09,0.11], 20);
-    // kabel lampu → stopkontak dinding belakang
-    const lamp = f.find(i => i.type === 'lamp')!;
-    cable([lamp.position.x, surf + 0.01, lamp.position.z], [0.40, 0.24, -2.28], 0.12, [0.55,0.45,0.30], 22);
-  }
 
-  /* ── Penggaris tinggi pada dinding kiri ── */
-  function ruler() {
-    for (let h = 0; h <= 18; h++) {
-      const y = h*0.1;
-      const major = h % 5 === 0;
-      draw('cube', mul(T(-2.63, y, -1.5), S(0.02, major?0.012:0.005, major?0.22:0.12)), major ? [0.95,0.75,0.25] : [0.62,0.62,0.66]);
-    }
-  }
 
   return {
     resize() {
@@ -628,8 +542,6 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
       if (deskItem) deskSurf = deskSurfaceY(deskItem);
 
       room(d);
-      ruler();
-      desktopSetup(w.furniture);
 
       for (const it of w.furniture) {
         curSel = it.id === w.selectedId;

@@ -250,7 +250,7 @@ function SettingsBody({ settings, upd }: { settings: GameSettings; upd: (s: Part
         </p>
       </div>
 
-      <Slider label="Sensitivitas Mouse" v={settings.mouseSensitivity} on={v => upd({ mouseSensitivity: v })} />
+      <Slider label={settings.device === 'mobile' ? 'Sensitivitas Geser Layar' : 'Sensitivitas Mouse'} v={settings.device === 'mobile' ? settings.touchSensitivity : settings.mouseSensitivity} on={v => upd(settings.device === 'mobile' ? { touchSensitivity: v } : { mouseSensitivity: v })} />
       <Slider label="Kecepatan Gerak" v={settings.moveSpeed} on={v => upd({ moveSpeed: v })} />
       <Slider label="Volume" v={settings.volume} on={v => upd({ volume: v })} />
       <div className="flex items-center justify-between">
@@ -389,11 +389,11 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
   const isMobile = gs.settings.device === 'mobile';
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const initialCamY = 1.65 * ((gs.settings.userHeightCm || 170) / 170);
-  const world = useRef<RenderWorld & { keys: Record<string, boolean>; locked: boolean; sitting: boolean; sitT: number; moveSpeed: number; sens: number; raf: number; userHeightCm: number }>({
+  const world = useRef<RenderWorld & { keys: Record<string, boolean>; locked: boolean; sitting: boolean; sitT: number; moveSpeed: number; sens: number; touchSens: number; raf: number; userHeightCm: number }>({
     camX: 0, camY: initialCamY, camZ: 0.9, yaw: Math.PI, pitch: -0.12,
     furniture: deepCopy(furniture), selectedId: null, hoveredId: null, heldId: null,
     darkMode: gs.settings.darkMode, showGuide: true, interactionMode: false,
-    keys: {}, locked: false, sitting: false, sitT: 0, moveSpeed: 50, sens: 50, raf: 0,
+    keys: {}, locked: false, sitting: false, sitT: 0, moveSpeed: 50, sens: 50, touchSens: 25, raf: 0,
     userHeightCm: gs.settings.userHeightCm || 170,
   });
 
@@ -412,6 +412,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
     world.current.darkMode = gs.settings.darkMode;
     world.current.moveSpeed = gs.settings.moveSpeed;
     world.current.sens = gs.settings.mouseSensitivity;
+    world.current.touchSens = gs.settings.touchSensitivity;
     world.current.userHeightCm = gs.settings.userHeightCm || 170;
   }, [gs.settings]);
 
@@ -663,8 +664,9 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
             joyLook.current.dx = (rawDx / (len || 1)) * capped;
             joyLook.current.dy = (rawDy / (len || 1)) * capped;
             // Apply look immediately
-            world.current.yaw -= (rawDx - joyLook.current.dx) * 0.003;
-            world.current.pitch = clamp(world.current.pitch - (rawDy - joyLook.current.dy) * 0.003, -1.25, 1.25);
+            const touchScale = world.current.touchSens / 100 * 0.003;
+            world.current.yaw -= (rawDx - joyLook.current.dx) * touchScale;
+            world.current.pitch = clamp(world.current.pitch - (rawDy - joyLook.current.dy) * touchScale, -1.25, 1.25);
           }
         }
       };
@@ -719,7 +721,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
           w.camX = clamp(w.camX, -2.34, 2.34); w.camZ = clamp(w.camZ, -1.94, 2.62);
         }
         if (jl.active) {
-          const sens = w.sens / 6000 * 60;
+          const sens = w.touchSens / 6000 * 60;
           w.yaw -= jl.dx * sens * dt;
           w.pitch = clamp(w.pitch - jl.dy * sens * dt, -1.25, 1.25);
         }

@@ -37,6 +37,7 @@ export interface ErgonomicScore {
 
 export interface GameSettings {
   mouseSensitivity: number;
+  touchSensitivity: number;
   moveSpeed: number;
   volume: number;
   darkMode: boolean;

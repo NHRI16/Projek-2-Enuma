@@ -106,6 +106,7 @@ export const initialFurniture: FurnitureItem[] = [
 
 export const defaultSettings: GameSettings = {
   mouseSensitivity: 50,
+  touchSensitivity: 25,
   moveSpeed: 50,
   volume: 70,
   darkMode: false,

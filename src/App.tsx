@@ -10,6 +10,12 @@ import { createRenderer, RenderWorld, raycastPlane } from './game/renderer';
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const deepCopy = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
 const ICON: Record<string, string> = { desk: '', chair: '', monitor: '', keyboard: '', mouse: '', lamp: '' };
+const isTouchDevice = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+type OrientationScreen = Screen & { orientation?: { lock?: (orientation: 'landscape') => Promise<void> } };
+const requestLandscape = async () => {
+  try { await document.documentElement.requestFullscreen?.(); } catch {}
+  try { await (screen as OrientationScreen).orientation?.lock?.('landscape'); } catch {}
+};
 
 const getStoredHeight = (): number => {
   try {
@@ -29,6 +35,7 @@ export default function App() {
       ...initialGameState,
       settings: {
         ...initialGameState.settings,
+        device: isTouchDevice() ? 'mobile' : initialGameState.settings.device,
         userHeightCm: storedHeight,
       },
     };
@@ -60,7 +67,10 @@ export default function App() {
     setFurniture(normalizeDeskItems(deepCopy(initialFurniture), gs.settings.userHeightCm));
     setGs(p => ({ ...p, phase: 'tutorial', score: null }));
   }, [gs.settings.userHeightCm]);
-  const play = useCallback(() => setGs(p => ({ ...p, phase: 'playing' })), []);
+  const play = useCallback(() => {
+    if (gs.settings.device === 'mobile') void requestLandscape();
+    setGs(p => ({ ...p, phase: 'playing' }));
+  }, [gs.settings.device]);
   const evaluate = useCallback(() => {
     setGs(p => ({
       ...p,
@@ -71,7 +81,7 @@ export default function App() {
   const menu = useCallback(() => setGs(p => ({ ...p, phase: 'menu', score: null })), []);
 
   if (gs.phase === 'menu') return <Menu onStart={start} settings={gs.settings} upd={upd} />;
-  if (gs.phase === 'tutorial') return <Tutorial onDone={play} />;
+  if (gs.phase === 'tutorial') return <Tutorial onDone={play} isMobile={gs.settings.device === 'mobile'} />;
   if (gs.phase === 'results') return <Results score={gs.score!} userHeightCm={gs.settings.userHeightCm} onMenu={menu} onRetry={start} />;
   return <Game furniture={furniture} setFurniture={setFurniture} gs={gs} setGs={setGs} upd={upd} onEvaluate={evaluate} onExit={menu} />;
 }
@@ -264,11 +274,10 @@ function Slider({ label, v, on }: { label: string; v: number; on: (n: number) =>
 }
 
 /* ═══════════════════════ TUTORIAL ═══════════════════════ */
-function Tutorial({ onDone }: { onDone: () => void }) {
+function Tutorial({ onDone, isMobile }: { onDone: () => void; isMobile: boolean }) {
   const [i, setI] = useState(0);
-  const isMobile = initialGameState.settings.device === 'mobile';
   const steps = [
-    { ic: '', t: 'Jelajahi Ruangan', d: isMobile ? 'Gunakan joystick kiri untuk berjalan, geser layar kanan untuk melihat sekeliling.' : 'Gunakan W A S D untuk berjalan dan gerakkan mouse untuk melihat sekeliling.', s: isMobile ? 'Joystick muncul otomatis di pojok bawah kiri.' : 'Klik layar dahulu untuk mengunci kursor.' },
+    { ic: '', t: 'Jelajahi Ruangan', d: isMobile ? 'Gunakan D-pad kiri untuk berjalan, lalu geser area kanan layar untuk melihat sekeliling.' : 'Gunakan W A S D untuk berjalan dan gerakkan mouse untuk melihat sekeliling.', s: isMobile ? 'Game akan meminta mode lanskap saat Anda mulai.' : 'Klik layar dahulu untuk mengunci kursor.' },
     { ic: '', t: 'Ambil & Pindahkan Objek', d: isMobile ? 'Tap objek (kursi, meja, dll) → objek bersinar hijau → geser layar → objek mengikuti pandangan → tap lagi untuk meletakkan.' : 'Arahkan crosshair ke objek → Klik kiri → objek bersinar hijau & mengikuti pandangan → Klik kiri lagi untuk meletakkan.', s: 'Skor ergonomi berubah otomatis setiap objek dilepas.' },
     { ic: '', t: 'Pantau Skor Real-Time', d: 'Panel kiri menampilkan 6 langkah ergonomi. Skor berubah langsung saat objek dipindah.', s: 'Kejar zona hijau di setiap langkah!' },
     { ic: '', t: 'Kejar Zona Hijau', d: 'Setiap langkah punya penunjuk target. Klik langkah di panel kiri untuk memilih objek langsung.', s: 'Bayangan hijau di ruangan menunjukkan posisi ideal.' },
@@ -388,11 +397,8 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
     userHeightCm: gs.settings.userHeightCm || 170,
   });
 
-  // Joystick refs (Mobile)
-  const joyMove = useRef<JoyState>(mkJoy());
+  // Area kanan untuk melihat; D-pad mengisi world.keys untuk bergerak.
   const joyLook = useRef<JoyState>(mkJoy());
-  const [joyMoveUi, setJoyMoveUi] = useState({ active: false, x: 0, y: 0, dx: 0, dy: 0 });
-  const [joyLookUi, setJoyLookUi] = useState({ active: false, x: 0, y: 0, dx: 0, dy: 0 });
 
   // State untuk objek yang sedang "dipegang"
   const heldId = useRef<string | null>(null);
@@ -408,6 +414,16 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
     world.current.sens = gs.settings.mouseSensitivity;
     world.current.userHeightCm = gs.settings.userHeightCm || 170;
   }, [gs.settings]);
+
+  const [needsLandscape, setNeedsLandscape] = useState(false);
+  useEffect(() => {
+    if (!isMobile) return;
+    const sync = () => setNeedsLandscape(window.innerHeight > window.innerWidth);
+    sync();
+    window.addEventListener('resize', sync);
+    window.addEventListener('orientationchange', sync);
+    return () => { window.removeEventListener('resize', sync); window.removeEventListener('orientationchange', sync); };
+  }, [isMobile]);
 
   const toast = useCallback((m: string) => {
     setUi(p => ({ ...p, toast: m }));
@@ -602,7 +618,6 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
     // Mobile touch
     let cleanupMobile: (() => void) | null = null;
     if (isMobile) {
-      const JOYSTICK_R = 60;
       const onTouchStart = (e: TouchEvent) => {
         e.preventDefault();
         for (let i = 0; i < e.changedTouches.length; i++) {
@@ -613,13 +628,8 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
             if (heldId.current) { commitHeld(); return; }
             if (world.current.hoveredId) { pickupObject(world.current.hoveredId); return; }
           }
-          const isLeft = t.clientX < window.innerWidth / 2;
-          if (isLeft && !joyMove.current.active) {
-            joyMove.current = { active: true, id: t.identifier, x: t.clientX, y: t.clientY, dx: 0, dy: 0 };
-            setJoyMoveUi({ active: true, x: t.clientX, y: t.clientY, dx: 0, dy: 0 });
-          } else if (!isLeft && !joyLook.current.active) {
+          if (t.clientX >= window.innerWidth / 2 && !joyLook.current.active) {
             joyLook.current = { active: true, id: t.identifier, x: t.clientX, y: t.clientY, dx: 0, dy: 0 };
-            setJoyLookUi({ active: true, x: t.clientX, y: t.clientY, dx: 0, dy: 0 });
           }
         }
       };
@@ -627,21 +637,12 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
         e.preventDefault();
         for (let i = 0; i < e.changedTouches.length; i++) {
           const t = e.changedTouches[i];
-          if (joyMove.current.active && t.identifier === joyMove.current.id) {
-            const rawDx = t.clientX - joyMove.current.x, rawDy = t.clientY - joyMove.current.y;
-            const len = Math.hypot(rawDx, rawDy);
-            const capped = Math.min(len, JOYSTICK_R);
-            joyMove.current.dx = (rawDx / (len || 1)) * capped;
-            joyMove.current.dy = (rawDy / (len || 1)) * capped;
-            setJoyMoveUi(p => ({ ...p, dx: joyMove.current.dx, dy: joyMove.current.dy }));
-          }
           if (joyLook.current.active && t.identifier === joyLook.current.id) {
             const rawDx = t.clientX - joyLook.current.x, rawDy = t.clientY - joyLook.current.y;
             const len = Math.hypot(rawDx, rawDy);
-            const capped = Math.min(len, JOYSTICK_R);
+            const capped = Math.min(len, 60);
             joyLook.current.dx = (rawDx / (len || 1)) * capped;
             joyLook.current.dy = (rawDy / (len || 1)) * capped;
-            setJoyLookUi(p => ({ ...p, dx: joyLook.current.dx, dy: joyLook.current.dy }));
             // Apply look immediately
             world.current.yaw -= (rawDx - joyLook.current.dx) * 0.003;
             world.current.pitch = clamp(world.current.pitch - (rawDy - joyLook.current.dy) * 0.003, -1.25, 1.25);
@@ -652,8 +653,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
         e.preventDefault();
         for (let i = 0; i < e.changedTouches.length; i++) {
           const t = e.changedTouches[i];
-          if (joyMove.current.id === t.identifier) { joyMove.current = mkJoy(); setJoyMoveUi({ active: false, x: 0, y: 0, dx: 0, dy: 0 }); }
-          if (joyLook.current.id === t.identifier) { joyLook.current = mkJoy(); setJoyLookUi({ active: false, x: 0, y: 0, dx: 0, dy: 0 }); }
+          if (joyLook.current.id === t.identifier) joyLook.current = mkJoy();
         }
       };
       canvas.addEventListener('touchstart', onTouchStart, { passive: false });
@@ -686,16 +686,16 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
         w.camX = clamp(w.camX, -2.34, 2.34); w.camZ = clamp(w.camZ, -1.94, 2.62);
       }
 
-      // ── Gerak Mobile (joystick) ──
+      // ── Gerak Mobile (D-pad) ──
       if (isMobile && !w.sitting) {
-        const jm = joyMove.current;
         const jl = joyLook.current;
-        if (jm.active) {
+        if (w.keys['w'] || w.keys['s'] || w.keys['a'] || w.keys['d']) {
           const sp = (w.moveSpeed / 50) * 2.4 * dt;
-          const nx = jm.dx / 60, ny = jm.dy / 60;
           const sy = Math.sin(w.yaw), cy = Math.cos(w.yaw);
-          w.camX += (sy * ny + cy * (-nx)) * sp;
-          w.camZ += (cy * ny + sy * nx) * sp;
+          if (w.keys['w']) { w.camX += sy * sp; w.camZ += cy * sp; }
+          if (w.keys['s']) { w.camX -= sy * sp; w.camZ -= cy * sp; }
+          if (w.keys['a']) { w.camX += cy * sp; w.camZ -= sy * sp; }
+          if (w.keys['d']) { w.camX -= cy * sp; w.camZ += sy * sp; }
           // Batas dinding ruangan (mobile): X ±2.34, Z dari -1.94 s/d +2.62
           w.camX = clamp(w.camX, -2.34, 2.34); w.camZ = clamp(w.camZ, -1.94, 2.62);
         }
@@ -835,11 +835,21 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
   const allDone = steps.every(s => s.done);
   const sc = score.total;
   const scColor = sc >= 80 ? '#22c55e' : sc >= 55 ? '#eab308' : '#ef4444';
-  const JOYSTICK_R = 60;
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden select-none">
       <canvas ref={canvasRef} className="block w-full h-full" />
+
+      {isMobile && needsLandscape && (
+        <div className="absolute inset-0 z-[60] grid place-items-center bg-slate-950/95 p-6 text-center">
+          <div>
+            <div className="text-5xl mb-4">↻</div>
+            <p className="text-white text-lg font-bold">Putar perangkat ke mode lanskap</p>
+            <p className="mt-2 text-sm text-slate-400">ErgoSim 3D dirancang untuk dimainkan secara horizontal.</p>
+            <button onClick={() => void requestLandscape()} className="mt-5 rounded-xl bg-indigo-500 px-5 py-2.5 text-sm font-bold text-white">Coba otomatis</button>
+          </div>
+        </div>
+      )}
 
       {/* Crosshair */}
       <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -860,21 +870,21 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
       </div>
 
       {/* ══ SKOR (kanan atas) ══ */}
-      <div className="absolute top-4 right-4 flex items-start gap-2">
-        <div className="bg-black/65 backdrop-blur-md rounded-2xl px-4 py-3 border border-white/10 flex items-center gap-3">
-          <div className="relative w-11 h-11">
+      <div className={`absolute flex items-start gap-2 ${isMobile ? 'top-2 right-2' : 'top-4 right-4'}`}>
+        <div className={`bg-black/65 backdrop-blur-md rounded-2xl border border-white/10 flex items-center gap-3 ${isMobile ? 'px-2.5 py-2' : 'px-4 py-3'}`}>
+          <div className={`relative ${isMobile ? 'w-9 h-9' : 'w-11 h-11'}`}>
             <svg viewBox="0 0 40 40" className="w-full h-full -rotate-90">
               <circle cx="20" cy="20" r="16.5" fill="none" stroke="#334155" strokeWidth="4" />
               <circle cx="20" cy="20" r="16.5" fill="none" stroke={scColor} strokeWidth="4" strokeLinecap="round" strokeDasharray={`${sc * 1.037} 103.7`} className="transition-all duration-300" />
             </svg>
             <span className="absolute inset-0 grid place-items-center text-[11px] font-black" style={{ color: scColor }}>{sc}</span>
           </div>
-          <div>
+          <div className={isMobile ? 'hidden' : ''}>
             <p className="text-white text-[13px] font-bold leading-tight">Skor Ergonomi</p>
             <p className="text-[11px]" style={{ color: scColor }}>{sc >= 80 ? 'Sangat baik' : sc >= 55 ? 'Cukup' : 'Perlu perbaikan'}</p>
           </div>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className={`flex flex-col ${isMobile ? 'gap-1' : 'gap-1.5'}`}>
           <IconBtn onClick={() => { document.exitPointerLock(); setUi(p => ({ ...p, help: true })); }} label="Bantuan">?</IconBtn>
           <IconBtn onClick={() => { document.exitPointerLock(); setGs(p => ({ ...p, showSettings: true })); }} label="Pengaturan">...</IconBtn>
           <IconBtn onClick={() => { document.exitPointerLock(); onExit(); }} label="Keluar" danger>✕</IconBtn>
@@ -882,14 +892,14 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
       </div>
 
       {/* ══ LANGKAH ERGONOMI (kiri) ══ */}
-      <div className="absolute top-4 left-4 w-[260px]">
+      <div className={`absolute ${isMobile ? 'top-2 left-2 w-[190px]' : 'top-4 left-4 w-[260px]'}`}>
         <div className="bg-black/65 backdrop-blur-md rounded-2xl border border-white/10 overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-white/10 flex items-center justify-between">
+          <div className={`${isMobile ? 'px-3 py-2' : 'px-4 py-2.5'} border-b border-white/10 flex items-center justify-between`}>
             <h3 className="text-white text-[13px] font-bold">Langkah Ergonomi</h3>
             <span className="text-[11px] text-slate-400">{steps.filter(s => s.done).length}/{steps.length}</span>
           </div>
-          <div className="p-2 space-y-1">
-            {steps.map((s, i) => <StepRow key={s.id} step={s} n={i + 1} active={s.id === activeStep.id} selected={ui.selId === s.itemId} onClick={() => selectItem(s.itemId)} />)}
+          <div className={isMobile ? 'p-1 space-y-0.5' : 'p-2 space-y-1'}>
+            {steps.map((s, i) => <StepRow key={s.id} step={s} n={i + 1} active={s.id === activeStep.id} selected={ui.selId === s.itemId} compact={isMobile} onClick={() => selectItem(s.itemId)} />)}
           </div>
           {allDone && (
             <button onClick={onEvaluate} className="w-full py-3 text-white font-bold text-sm" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
@@ -898,7 +908,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
           )}
         </div>
         {!allDone && (
-          <button onClick={onEvaluate} className="mt-2 w-full py-2.5 rounded-xl bg-white/10 backdrop-blur-md border border-white/15 text-white text-[13px] font-semibold hover:bg-white/20 transition">
+          <button onClick={onEvaluate} className={`mt-2 w-full rounded-xl bg-white/10 backdrop-blur-md border border-white/15 text-white text-[13px] font-semibold hover:bg-white/20 transition ${isMobile ? 'py-2' : 'py-2.5'}`}>
             Evaluasi Sekarang
           </button>
         )}
@@ -930,7 +940,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
       )}
 
       {/* ══ Petunjuk bawah kiri ══ */}
-      {!selected && !heldName && (
+      {!isMobile && !selected && !heldName && (
         <div className="absolute bottom-4 left-4 bg-black/55 backdrop-blur-md rounded-xl px-4 py-3 border border-white/10 max-w-[270px]">
           <p className="text-white text-[12px] font-semibold mb-1">Cara memindahkan objek</p>
           <p className="text-slate-400 text-[11px] leading-relaxed">
@@ -951,46 +961,22 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
         </div>
       )}
 
-      {/* ══ Virtual Joystick (Mobile) ══ */}
+      {/* ══ Kontrol Mobile ══ */}
       {isMobile && (
         <>
-          {/* Joystick Kiri - Gerak */}
-          <div className="absolute bottom-8 left-8 pointer-events-none">
-            <div className="relative w-32 h-32 rounded-full bg-white/10 border-2 border-white/25 backdrop-blur-sm">
-              <div className="absolute inset-0 flex items-center justify-center text-[10px] text-white/30">MOVE</div>
-              {joyMoveUi.active && (
-                <div className="absolute w-12 h-12 rounded-full bg-indigo-400/80 border-2 border-indigo-200/60 shadow-lg"
-                  style={{
-                    left: `calc(50% + ${Math.min(joyMoveUi.dx, JOYSTICK_R)}px - 24px)`,
-                    top: `calc(50% + ${Math.min(joyMoveUi.dy, JOYSTICK_R)}px - 24px)`,
-                  }} />
-              )}
-              {!joyMoveUi.active && <div className="absolute inset-0 flex items-center justify-center"><div className="w-12 h-12 rounded-full bg-white/15 border border-white/20" /></div>}
-            </div>
-          </div>
-          {/* Joystick Kanan - Lihat */}
-          <div className="absolute bottom-8 right-8 pointer-events-none">
-            <div className="relative w-32 h-32 rounded-full bg-white/10 border-2 border-white/25 backdrop-blur-sm">
-              <div className="absolute inset-0 flex items-center justify-center text-[10px] text-white/30">LOOK</div>
-              {joyLookUi.active && (
-                <div className="absolute w-12 h-12 rounded-full bg-purple-400/80 border-2 border-purple-200/60 shadow-lg"
-                  style={{
-                    left: `calc(50% + ${Math.min(joyLookUi.dx, JOYSTICK_R)}px - 24px)`,
-                    top: `calc(50% + ${Math.min(joyLookUi.dy, JOYSTICK_R)}px - 24px)`,
-                  }} />
-              )}
-              {!joyLookUi.active && <div className="absolute inset-0 flex items-center justify-center"><div className="w-12 h-12 rounded-full bg-white/15 border border-white/20" /></div>}
-            </div>
+          <DPad world={world} />
+          <div className="absolute bottom-3 right-3 rounded-lg border border-white/15 bg-black/45 px-3 py-2 text-[10px] font-semibold tracking-wide text-white/60 backdrop-blur-sm pointer-events-none">
+            GESER UNTUK MELIHAT
           </div>
           {/* Tombol Aksi Mobile */}
-          <div className="absolute bottom-36 right-8 flex flex-col gap-2">
+          <div className="absolute bottom-12 right-3 flex gap-2">
             <button
               onTouchStart={e => { e.preventDefault(); world.current.sitting = !world.current.sitting; setUi(p => ({ ...p, sitting: world.current.sitting })); }}
-              className="w-12 h-12 rounded-full bg-amber-500/80 border border-amber-300/40 text-white text-lg grid place-items-center backdrop-blur-sm active:scale-90 transition"
+              className="h-10 rounded-lg bg-amber-500/80 border border-amber-300/40 px-3 text-[12px] font-bold text-white backdrop-blur-sm active:scale-90 transition"
             >Duduk</button>
             <button
               onTouchStart={e => { e.preventDefault(); if (heldId.current) commitHeld(); else if (world.current.hoveredId) pickupObject(world.current.hoveredId); }}
-              className={`w-12 h-12 rounded-full border text-white text-lg grid place-items-center backdrop-blur-sm active:scale-90 transition ${
+              className={`h-10 rounded-lg border px-3 text-[12px] font-bold text-white backdrop-blur-sm active:scale-90 transition ${
                 heldName ? 'bg-green-500/80 border-green-300/40' : 'bg-white/20 border-white/20'
               }`}
             >{heldName ? 'Lepas' : 'Ambil'}</button>
@@ -1031,21 +1017,42 @@ function IconBtn({ children, onClick, label, danger }: { children: React.ReactNo
   );
 }
 
-function StepRow({ step, n, active, selected, onClick }: { step: ErgoStep; n: number; active: boolean; selected: boolean; onClick: () => void }) {
+function DPad({ world }: { world: React.MutableRefObject<RenderWorld & { keys: Record<string, boolean> }> }) {
+  const press = (key: 'w' | 'a' | 's' | 'd', down: boolean) => (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    world.current.keys[key] = down;
+    if (down) e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const button = (key: 'w' | 'a' | 's' | 'd', arrow: string, extra = '') => (
+    <button key={key} aria-label={`Bergerak ${key}`} onPointerDown={press(key, true)} onPointerUp={press(key, false)} onPointerCancel={press(key, false)} onPointerLeave={press(key, false)}
+      className={`h-10 w-10 rounded-md border border-white/25 bg-slate-800/85 text-lg font-bold text-white shadow-lg backdrop-blur-sm active:scale-90 active:bg-indigo-500 ${extra}`}>
+      {arrow}
+    </button>
+  );
+  return (
+    <div className="absolute bottom-3 left-3 grid grid-cols-3 gap-1 touch-none">
+      <span />{button('w', '▲')}<span />
+      {button('a', '◀')}{button('s', '▼')}{button('d', '▶')}
+    </div>
+  );
+}
+
+function StepRow({ step, n, active, selected, compact, onClick }: { step: ErgoStep; n: number; active: boolean; selected: boolean; compact?: boolean; onClick: () => void }) {
   const col = step.done ? '#22c55e' : step.score >= 50 ? '#eab308' : '#ef4444';
   return (
     <button onClick={onClick}
-      className={`w-full text-left rounded-xl px-2.5 py-2 transition flex items-start gap-2.5 ${selected ? 'bg-indigo-500/25 ring-1 ring-indigo-400/50' : active ? 'bg-white/10' : 'hover:bg-white/5'}`}>
-      <span className="w-3 shrink-0 text-center text-base leading-none mt-0.5">{step.done ? '✓' : step.icon}</span>
+      className={`w-full text-left rounded-xl transition flex items-start gap-2 ${compact ? 'px-1.5 py-1' : 'px-2.5 py-2 gap-2.5'} ${selected ? 'bg-indigo-500/25 ring-1 ring-indigo-400/50' : active ? 'bg-white/10' : 'hover:bg-white/5'}`}>
+      <span className={`${compact ? 'w-2.5 text-xs' : 'w-3 text-base'} shrink-0 text-center leading-none mt-0.5`}>{step.done ? '✓' : step.icon}</span>
       <span className="flex-1 min-w-0">
         <span className="flex items-center gap-1.5">
-          <span className={`text-[12px] font-semibold truncate ${step.done ? 'text-emerald-300' : 'text-white'}`}>{n}. {step.title}</span>
+          <span className={`${compact ? 'text-[10px]' : 'text-[12px]'} font-semibold truncate ${step.done ? 'text-emerald-300' : 'text-white'}`}>{n}. {step.title}</span>
         </span>
         <span className="block mt-1 h-1 rounded-full bg-slate-700 overflow-hidden">
           <span className="block h-full rounded-full transition-all duration-500" style={{ width: `${step.score}%`, background: col }} />
         </span>
       </span>
-      <span className="text-[10px] font-bold tabular-nums mt-0.5" style={{ color: col }}>{step.score}</span>
+      <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} font-bold tabular-nums mt-0.5`} style={{ color: col }}>{step.score}</span>
     </button>
   );
 }

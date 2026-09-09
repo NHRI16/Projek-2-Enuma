@@ -351,12 +351,12 @@ export function getSteps(all: FurnitureItem[], userHeightCm: number = 170): Ergo
     ({ id, itemId, icon, title, why, score, done: score >= 80 });
 
   return [
-    mk('chair',   'chair',    '🪑', 'Atur tinggi kursi',         'Kaki menapak rata di lantai, paha horizontal, lutut 90°.',           chairS),
-    mk('desk',    'desk',     '🪵', 'Atur tinggi meja',           'Permukaan meja sejajar siku agar lengan membentuk 90°.',              deskS),
-    mk('monitorH','monitor',  '🖥️', 'Atur tinggi monitor',        'Tepi atas layar sejajar mata agar leher tidak menunduk.',             monHS),
-    mk('monitorD','monitor',  '📏', 'Atur jarak & arah monitor',  'Jarak 50–70 cm dari kursi, layar menghadap lurus ke Anda.',           monDS),
-    mk('hands',   'keyboard', '⌨️', 'Atur keyboard & mouse',      'Pergelangan lurus, mouse dekat keyboard, bahu rileks.',              handS),
-    mk('lamp',    'lamp',     '💡', 'Atur pencahayaan',           'Cahaya dari samping agar layar tidak memantulkan silau.',             lampS),
+    mk('chair',   'chair',    '', 'Atur tinggi kursi',         'Kaki menapak rata di lantai, paha horizontal, lutut 90°.',           chairS),
+    mk('desk',    'desk',     '', 'Atur tinggi meja',           'Permukaan meja sejajar siku agar lengan membentuk 90°.',              deskS),
+    mk('monitorH','monitor',  '', 'Atur tinggi monitor',        'Tepi atas layar sejajar mata agar leher tidak menunduk.',             monHS),
+    mk('monitorD','monitor',  '', 'Atur jarak & arah monitor',  'Jarak 50–70 cm dari kursi, layar menghadap lurus ke Anda.',           monDS),
+    mk('hands',   'keyboard', '', 'Atur keyboard & mouse',      'Pergelangan lurus, mouse dekat keyboard, bahu rileks.',              handS),
+    mk('lamp',    'lamp',     '', 'Atur pencahayaan',           'Cahaya dari samping agar layar tidak memantulkan silau.',             lampS),
   ];
 }
 
@@ -394,7 +394,7 @@ export function calculateErgonomicScore(items: FurnitureItem[], userHeightCm: nu
   }
   [chairS, deskS, monS, kbS, mouseS].forEach(s => { if (s.score < 80) feedback.push(s.hint); });
   if (feedback.length === 0)
-    feedback.push('🎉 Seluruh pengaturan sudah memenuhi standar ergonomi. Pertahankan postur ini dan istirahat 20 detik setiap 20 menit!');
+    feedback.push('Seluruh pengaturan sudah memenuhi standar ergonomi. Pertahankan postur ini dan istirahat 20 detik setiap 20 menit!');
 
   const total = Math.round(
     chairS.score * 0.18 + deskS.score * 0.14 + monHeight * 0.18 + monDist * 0.12 +

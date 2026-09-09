@@ -9,7 +9,7 @@ import { createRenderer, RenderWorld, raycastPlane } from './game/renderer';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const deepCopy = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
-const ICON: Record<string, string> = { desk: '🪵', chair: '🪑', monitor: '🖥️', keyboard: '⌨️', mouse: '🖱️', lamp: '💡' };
+const ICON: Record<string, string> = { desk: '', chair: '', monitor: '', keyboard: '', mouse: '', lamp: '' };
 
 const getStoredHeight = (): number => {
   try {
@@ -99,34 +99,34 @@ function Menu({ onStart, settings, upd }: { onStart: () => void; settings: GameS
         <p className="text-indigo-300/60 text-sm max-w-md mx-auto mb-9">Ikuti 6 langkah menata meja kerja yang sehat — atur tinggi kursi, meja, monitor, keyboard, dan pencahayaan.</p>
         <div className="flex flex-col items-center gap-3">
           <button onClick={onStart} className="w-72 py-4 rounded-2xl text-white font-bold text-lg hover:scale-[1.03] active:scale-95 transition"
-            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 14px 40px -10px rgba(99,102,241,.8)' }}>▶  Mulai Simulasi</button>
+            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 14px 40px -10px rgba(99,102,241,.8)' }}>Mulai Simulasi</button>
           
           <div className="flex bg-slate-800/50 rounded-xl p-1 w-72 border border-slate-700/50">
-            <button onClick={() => upd({ device: 'desktop' })} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${settings.device === 'desktop' ? 'bg-indigo-500/30 text-indigo-200 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>💻 Desktop</button>
-            <button onClick={() => upd({ device: 'mobile' })} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${settings.device === 'mobile' ? 'bg-indigo-500/30 text-indigo-200 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>📱 Mobile</button>
+            <button onClick={() => upd({ device: 'desktop' })} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${settings.device === 'desktop' ? 'bg-indigo-500/30 text-indigo-200 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>Desktop</button>
+            <button onClick={() => upd({ device: 'mobile' })} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${settings.device === 'mobile' ? 'bg-indigo-500/30 text-indigo-200 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>Mobile</button>
           </div>
 
-          <button onClick={() => setModal('set')} className="w-72 py-3 rounded-2xl text-indigo-200 font-semibold border border-indigo-400/25 hover:bg-indigo-500/15 transition">⚙️  Pengaturan</button>
-          <button onClick={() => setModal('about')} className="w-72 py-3 rounded-2xl text-indigo-200 font-semibold border border-indigo-400/25 hover:bg-indigo-500/15 transition">📖  Panduan Ergonomi</button>
+          <button onClick={() => setModal('set')} className="w-72 py-3 rounded-2xl text-indigo-200 font-semibold border border-indigo-400/25 hover:bg-indigo-500/15 transition">Pengaturan</button>
+          <button onClick={() => setModal('about')} className="w-72 py-3 rounded-2xl text-indigo-200 font-semibold border border-indigo-400/25 hover:bg-indigo-500/15 transition">Panduan Ergonomi</button>
         </div>
         <p className="text-indigo-400/40 text-xs mt-10">© 2025 ErgoSim 3D — Media Pembelajaran Ergonomi</p>
       </div>
-      {modal === 'set' && <Modal title="⚙️ Pengaturan" onClose={() => setModal(null)}><SettingsBody settings={settings} upd={upd} /></Modal>}
+      {modal === 'set' && <Modal title="Pengaturan" onClose={() => setModal(null)}><SettingsBody settings={settings} upd={upd} /></Modal>}
       {modal === 'about' && (
-        <Modal title="📖 Panduan Ergonomi" onClose={() => setModal(null)}>
+        <Modal title="Panduan Ergonomi" onClose={() => setModal(null)}>
           <div className="space-y-3 text-sm text-slate-300">
             <p><b className="text-white">Ergonomi</b> menyesuaikan lingkungan kerja dengan postur tubuh pengguna agar kerja terasa nyaman, efisien, sehat, dan aman.</p>
             {(() => {
               const targets = getErgonomicTargets(settings.userHeightCm);
               return [
-                ['📏', `Profil Anda: ${settings.userHeightCm} cm`, `Target ideal disesuaikan: kursi ${Math.round(targets.chairSeat * 100)} cm, meja ${Math.round(targets.deskSurface * 100)} cm.`],
-                ['🪑', `Tinggi kursi ±${Math.round(targets.chairSeat * 100)} cm`, 'Kaki menapak rata di lantai, lutut ±90°, paha sejajar lantai.'],
-                ['🪵', `Tinggi meja ±${Math.round(targets.deskSurface * 100)} cm`, 'Permukaan meja sejajar siku sehingga lengan membentuk 90°.'],
-                ['🖥️', 'Monitor sejajar mata', `Tepi atas layar setinggi mata, jarak ${Math.round(targets.monitorDist * 100)} cm, tegak lurus pandangan.`],
-                ['⌨️', 'Keyboard 10–15 cm dari tepi', 'Pergelangan tangan lurus, bukan menekuk ke atas.'],
-                ['🖱️', 'Mouse menempel keyboard', 'Siku tetap dekat badan, bahu rileks tidak terangkat.'],
-                ['💡', 'Cahaya dari samping', 'Menghindari pantulan silau pada layar yang melelahkan mata.'],
-                ['⏱️', 'Aturan 20-20-20', 'Tiap 20 menit, lihat objek 20 kaki (6 m) selama 20 detik.'],
+                ['', `Profil Anda: ${settings.userHeightCm} cm`, `Target ideal disesuaikan: kursi ${Math.round(targets.chairSeat * 100)} cm, meja ${Math.round(targets.deskSurface * 100)} cm.`],
+                ['', `Tinggi kursi ±${Math.round(targets.chairSeat * 100)} cm`, 'Kaki menapak rata di lantai, lutut ±90°, paha sejajar lantai.'],
+                ['', `Tinggi meja ±${Math.round(targets.deskSurface * 100)} cm`, 'Permukaan meja sejajar siku sehingga lengan membentuk 90°.'],
+                ['', 'Monitor sejajar mata', `Tepi atas layar setinggi mata, jarak ${Math.round(targets.monitorDist * 100)} cm, tegak lurus pandangan.`],
+                ['', 'Keyboard 10–15 cm dari tepi', 'Pergelangan tangan lurus, bukan menekuk ke atas.'],
+                ['', 'Mouse menempel keyboard', 'Siku tetap dekat badan, bahu rileks tidak terangkat.'],
+                ['', 'Cahaya dari samping', 'Menghindari pantulan silau pada layar yang melelahkan mata.'],
+                ['', 'Aturan 20-20-20', 'Tiap 20 menit, lihat objek 20 kaki (6 m) selama 20 detik.'],
               ].map(([i, t, d]) => (
                 <div key={t} className="flex gap-3 bg-slate-900/50 rounded-xl p-3">
                   <span className="text-xl">{i}</span>
@@ -135,7 +135,7 @@ function Menu({ onStart, settings, upd }: { onStart: () => void; settings: GameS
               ));
             })()}
             <p className="text-[11px] text-slate-400 italic text-center pt-1">
-              ℹ️ Simulasi edukatif ini tidak menggantikan asesmen ergonomi profesional.
+              Simulasi edukatif ini tidak menggantikan asesmen ergonomi profesional.
             </p>
           </div>
         </Modal>
@@ -170,7 +170,7 @@ function SettingsBody({ settings, upd }: { settings: GameSettings; upd: (s: Part
         <div className="flex items-center justify-between">
           <div>
             <span className="text-sm font-bold text-white flex items-center gap-1.5">
-              📏 Profil Ergonomi Pengguna
+              Profil Ergonomi Pengguna
             </span>
             <p className="text-[11px] text-slate-400">Target disesuaikan dengan tinggi tubuh Anda</p>
           </div>
@@ -210,41 +210,41 @@ function SettingsBody({ settings, upd }: { settings: GameSettings; upd: (s: Part
 
         {/* Target Personal Langsung */}
         <div className="pt-2 border-t border-slate-700/60">
-          <p className="text-[11px] font-bold text-emerald-400 mb-2">🎯 Target Personal Langsung:</p>
+          <p className="text-[11px] font-bold text-emerald-400 mb-2">Target Personal Langsung:</p>
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="bg-slate-800/80 rounded-xl p-2.5 border border-slate-700/50">
-              <span className="text-slate-400 block text-[10px]">🪑 Dudukan Kursi</span>
+              <span className="text-slate-400 block text-[10px]">Dudukan Kursi</span>
               <span className="text-white font-bold text-sm">{Math.round(targets.chairSeat * 100)} cm</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-2.5 border border-slate-700/50">
-              <span className="text-slate-400 block text-[10px]">🪵 Permukaan Meja</span>
+              <span className="text-slate-400 block text-[10px]">Permukaan Meja</span>
               <span className="text-white font-bold text-sm">{Math.round(targets.deskSurface * 100)} cm</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-2.5 border border-slate-700/50">
-              <span className="text-slate-400 block text-[10px]">💪 Selisih Siku–Meja</span>
+              <span className="text-slate-400 block text-[10px]">Selisih Siku–Meja</span>
               <span className="text-white font-bold text-sm">{Math.round(targets.elbowGap * 100)} cm</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-2.5 border border-slate-700/50">
-              <span className="text-slate-400 block text-[10px]">🖥️ Tengah Monitor</span>
+              <span className="text-slate-400 block text-[10px]">Tengah Monitor</span>
               <span className="text-white font-bold text-sm">{Math.round(targets.monitorCenter * 100)} cm</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-2.5 border border-slate-700/50 col-span-2 flex justify-between items-center">
-              <span className="text-slate-400 text-[10px]">📏 Jarak Ideal Monitor</span>
+              <span className="text-slate-400 text-[10px]">Jarak Ideal Monitor</span>
               <span className="text-white font-bold text-sm">{Math.round(targets.monitorDist * 100)} cm</span>
             </div>
           </div>
         </div>
 
         <p className="text-[10px] text-amber-300/80 italic leading-relaxed pt-1">
-          ℹ️ Catatan: Hasil simulasi merupakan panduan edukasi ergonomi berbasis proporsional tubuh, bukan pengganti asesmen ergonomi profesional.
+          Catatan: Hasil simulasi merupakan panduan edukasi ergonomi berbasis proporsional tubuh, bukan pengganti asesmen ergonomi profesional.
         </p>
       </div>
 
-      <Slider label="🖱️ Sensitivitas Mouse" v={settings.mouseSensitivity} on={v => upd({ mouseSensitivity: v })} />
-      <Slider label="🏃 Kecepatan Gerak" v={settings.moveSpeed} on={v => upd({ moveSpeed: v })} />
-      <Slider label="🔊 Volume" v={settings.volume} on={v => upd({ volume: v })} />
+      <Slider label="Sensitivitas Mouse" v={settings.mouseSensitivity} on={v => upd({ mouseSensitivity: v })} />
+      <Slider label="Kecepatan Gerak" v={settings.moveSpeed} on={v => upd({ moveSpeed: v })} />
+      <Slider label="Volume" v={settings.volume} on={v => upd({ volume: v })} />
       <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-300 font-medium">🌙 Mode Gelap</span>
+        <span className="text-sm text-slate-300 font-medium">Mode Gelap</span>
         <button onClick={() => upd({ darkMode: !settings.darkMode })} className={`w-14 h-7 rounded-full transition ${settings.darkMode ? 'bg-indigo-500' : 'bg-slate-600'}`}>
           <div className={`w-5 h-5 bg-white rounded-full transition-transform mt-1 ${settings.darkMode ? 'translate-x-8' : 'translate-x-1'}`} />
         </button>
@@ -268,11 +268,11 @@ function Tutorial({ onDone }: { onDone: () => void }) {
   const [i, setI] = useState(0);
   const isMobile = initialGameState.settings.device === 'mobile';
   const steps = [
-    { ic: isMobile ? '📱' : '🎮', t: 'Jelajahi Ruangan', d: isMobile ? 'Gunakan joystick kiri untuk berjalan, geser layar kanan untuk melihat sekeliling.' : 'Gunakan W A S D untuk berjalan dan gerakkan mouse untuk melihat sekeliling.', s: isMobile ? 'Joystick muncul otomatis di pojok bawah kiri.' : 'Klik layar dahulu untuk mengunci kursor.' },
-    { ic: '✋', t: 'Ambil & Pindahkan Objek', d: isMobile ? 'Tap objek (kursi, meja, dll) → objek bersinar hijau → geser layar → objek mengikuti pandangan → tap lagi untuk meletakkan.' : 'Arahkan crosshair ke objek → Klik kiri → objek bersinar hijau & mengikuti pandangan → Klik kiri lagi untuk meletakkan.', s: 'Skor ergonomi berubah otomatis setiap objek dilepas.' },
-    { ic: '📊', t: 'Pantau Skor Real-Time', d: 'Panel kiri menampilkan 6 langkah ergonomi. Skor berubah langsung saat objek dipindah.', s: 'Kejar zona hijau di setiap langkah!' },
-    { ic: '🎯', t: 'Kejar Zona Hijau', d: 'Setiap langkah punya penunjuk target. Klik langkah di panel kiri untuk memilih objek langsung.', s: 'Bayangan hijau di ruangan menunjukkan posisi ideal.' },
-    { ic: '🪑', t: 'Duduk & Rasakan', d: isMobile ? 'Tekan tombol C di layar untuk duduk.' : 'Tekan C untuk duduk di kursi. Kamera turun ke tinggi mata Anda saat duduk.', s: 'Tekan C lagi untuk berdiri.' },
+    { ic: '', t: 'Jelajahi Ruangan', d: isMobile ? 'Gunakan joystick kiri untuk berjalan, geser layar kanan untuk melihat sekeliling.' : 'Gunakan W A S D untuk berjalan dan gerakkan mouse untuk melihat sekeliling.', s: isMobile ? 'Joystick muncul otomatis di pojok bawah kiri.' : 'Klik layar dahulu untuk mengunci kursor.' },
+    { ic: '', t: 'Ambil & Pindahkan Objek', d: isMobile ? 'Tap objek (kursi, meja, dll) → objek bersinar hijau → geser layar → objek mengikuti pandangan → tap lagi untuk meletakkan.' : 'Arahkan crosshair ke objek → Klik kiri → objek bersinar hijau & mengikuti pandangan → Klik kiri lagi untuk meletakkan.', s: 'Skor ergonomi berubah otomatis setiap objek dilepas.' },
+    { ic: '', t: 'Pantau Skor Real-Time', d: 'Panel kiri menampilkan 6 langkah ergonomi. Skor berubah langsung saat objek dipindah.', s: 'Kejar zona hijau di setiap langkah!' },
+    { ic: '', t: 'Kejar Zona Hijau', d: 'Setiap langkah punya penunjuk target. Klik langkah di panel kiri untuk memilih objek langsung.', s: 'Bayangan hijau di ruangan menunjukkan posisi ideal.' },
+    { ic: '', t: 'Duduk & Rasakan', d: isMobile ? 'Tekan tombol C di layar untuk duduk.' : 'Tekan C untuk duduk di kursi. Kamera turun ke tinggi mata Anda saat duduk.', s: 'Tekan C lagi untuk berdiri.' },
   ];
   const s = steps[i];
   return (
@@ -286,10 +286,10 @@ function Tutorial({ onDone }: { onDone: () => void }) {
           {steps.map((_, k) => <span key={k} className={`h-2 rounded-full transition-all ${k === i ? 'w-8 bg-indigo-500' : 'w-2 bg-slate-600'}`} />)}
         </div>
         <div className="flex gap-3 justify-center">
-          {i > 0 && <button onClick={() => setI(i - 1)} className="px-6 py-3 rounded-xl bg-slate-700 text-slate-200 font-medium hover:bg-slate-600">← Kembali</button>}
+          {i > 0 && <button onClick={() => setI(i - 1)} className="px-6 py-3 rounded-xl bg-slate-700 text-slate-200 font-medium hover:bg-slate-600">Kembali</button>}
           {i < steps.length - 1
-            ? <button onClick={() => setI(i + 1)} className="px-7 py-3 rounded-xl text-white font-bold hover:scale-105 transition" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>Lanjut →</button>
-            : <button onClick={onDone} className="px-8 py-3 rounded-xl text-white font-bold hover:scale-105 transition" style={{ background: 'linear-gradient(135deg,#10b981,#22d3ee)' }}>Mulai! 🎮</button>}
+            ? <button onClick={() => setI(i + 1)} className="px-7 py-3 rounded-xl text-white font-bold hover:scale-105 transition" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>Lanjut</button>
+            : <button onClick={onDone} className="px-8 py-3 rounded-xl text-white font-bold hover:scale-105 transition" style={{ background: 'linear-gradient(135deg,#10b981,#22d3ee)' }}>Mulai!</button>}
         </div>
       </div>
     </div>
@@ -301,29 +301,29 @@ function Results({ score, userHeightCm, onMenu, onRetry }: { score: ErgonomicSco
   const heightVal = userHeightCm || 170;
   const targets = getErgonomicTargets(heightVal);
   const C = { green: '#22c55e', yellow: '#eab308', red: '#ef4444' }[score.color];
-  const L = { green: 'Sangat Ergonomis! 🎉', yellow: 'Cukup Baik 👍', red: 'Perlu Perbaikan ⚠️' }[score.color];
+  const L = { green: 'Sangat Ergonomis!', yellow: 'Cukup Baik', red: 'Perlu Perbaikan' }[score.color];
   const rows: [string, number, string][] = [
-    ['Tinggi kursi', score.details.chairHeight, '🪑'], ['Tinggi meja', score.details.deskHeight, '🪵'],
-    ['Tinggi monitor', score.details.monitorHeight, '🖥️'], ['Jarak monitor', score.details.monitorDistance, '📏'],
-    ['Arah monitor', score.details.monitorTilt, '🔄'], ['Posisi keyboard', score.details.keyboardPosition, '⌨️'],
-    ['Posisi mouse', score.details.mousePosition, '🖱️'], ['Sudut siku', score.details.elbowAngle, '💪'],
+    ['Tinggi kursi', score.details.chairHeight, ''], ['Tinggi meja', score.details.deskHeight, ''],
+    ['Tinggi monitor', score.details.monitorHeight, ''], ['Jarak monitor', score.details.monitorDistance, ''],
+    ['Arah monitor', score.details.monitorTilt, ''], ['Posisi keyboard', score.details.keyboardPosition, ''],
+    ['Posisi mouse', score.details.mousePosition, ''], ['Sudut siku', score.details.elbowAngle, ''],
   ];
   const bc = (v: number) => v >= 80 ? '#22c55e' : v >= 50 ? '#eab308' : '#ef4444';
   return (
     <div className="fixed inset-0 overflow-y-auto py-8 px-4" style={{ background: 'radial-gradient(ellipse at 50% 0%, #2d2a5e 0%, #14122b 55%, #0a0918 100%)' }}>
       <div className="max-w-lg mx-auto bg-slate-800/90 border border-slate-700 rounded-3xl p-7 shadow-2xl">
-        <h2 className="text-xl font-bold text-white text-center mb-4">📊 Hasil Evaluasi Ergonomi</h2>
+        <h2 className="text-xl font-bold text-white text-center mb-4">Hasil Evaluasi Ergonomi</h2>
         
         {/* Ringkasan Profil Pengguna */}
         <div className="bg-indigo-950/70 border border-indigo-500/40 rounded-2xl p-4 mb-5 text-center shadow-lg">
-          <p className="text-xs text-indigo-300 font-semibold mb-1">👤 Profil Ergonomi Personal</p>
+          <p className="text-xs text-indigo-300 font-semibold mb-1">Profil Ergonomi Personal</p>
           <p className="text-sm font-bold text-white leading-relaxed">
             Profil: tinggi badan <span className="text-indigo-300">{heightVal} cm</span> — target meja <span className="text-emerald-400">{Math.round(targets.deskSurface * 100)} cm</span>, target kursi <span className="text-emerald-400">{Math.round(targets.chairSeat * 100)} cm</span>.
           </p>
           <div className="flex justify-center gap-4 text-[11px] text-slate-300 mt-2 pt-2 border-t border-indigo-500/20">
-            <span>🖥️ Layar: {Math.round(targets.monitorCenter * 100)} cm</span>
-            <span>📏 Jarak: {Math.round(targets.monitorDist * 100)} cm</span>
-            <span>💪 Siku: {Math.round(targets.elbowGap * 100)} cm</span>
+            <span>Layar: {Math.round(targets.monitorCenter * 100)} cm</span>
+            <span>Jarak: {Math.round(targets.monitorDist * 100)} cm</span>
+            <span>Siku: {Math.round(targets.elbowGap * 100)} cm</span>
           </div>
         </div>
 
@@ -349,15 +349,15 @@ function Results({ score, userHeightCm, onMenu, onRetry }: { score: ErgonomicSco
           ))}
         </div>
         <div className="bg-slate-900/60 rounded-2xl p-4 mb-6">
-          <h3 className="text-white font-bold text-sm mb-2.5">💡 Catatan & Saran</h3>
+          <h3 className="text-white font-bold text-sm mb-2.5">Catatan & Saran</h3>
           <ul className="space-y-1.5">{score.feedback.map((f, i) => <li key={i} className="text-[13px] text-slate-300 flex gap-2"><span className="text-indigo-400">•</span>{f}</li>)}</ul>
         </div>
         <div className="flex gap-3 justify-center mb-4">
-          <button onClick={onRetry} className="px-6 py-3 rounded-xl text-white font-bold hover:scale-105 transition" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>🔄 Ulangi</button>
-          <button onClick={onMenu} className="px-6 py-3 rounded-xl bg-slate-700 text-slate-200 font-medium hover:bg-slate-600">🏠 Menu</button>
+          <button onClick={onRetry} className="px-6 py-3 rounded-xl text-white font-bold hover:scale-105 transition" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>Ulangi</button>
+          <button onClick={onMenu} className="px-6 py-3 rounded-xl bg-slate-700 text-slate-200 font-medium hover:bg-slate-600">Menu</button>
         </div>
         <p className="text-[11px] text-slate-400 text-center leading-relaxed max-w-sm mx-auto">
-          ℹ️ Catatan: Hasil simulasi merupakan panduan edukasi ergonomi berbasis referensi proporsional tubuh dan bukan pengganti asesmen ergonomi profesional medis/okupasional.
+          Catatan: Hasil simulasi merupakan panduan edukasi ergonomi berbasis referensi proporsional tubuh dan bukan pengganti asesmen ergonomi profesional medis/okupasional.
         </p>
       </div>
     </div>
@@ -420,7 +420,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
   useEffect(() => {
     if (prevHeightRef.current !== gs.settings.userHeightCm) {
       prevHeightRef.current = gs.settings.userHeightCm;
-      toast(`🎯 Target ergonomi disesuaikan untuk tinggi ${gs.settings.userHeightCm} cm`);
+      toast(`Target ergonomi disesuaikan untuk tinggi ${gs.settings.userHeightCm} cm`);
     }
   }, [gs.settings.userHeightCm, toast]);
 
@@ -462,9 +462,9 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
     if (it) {
       setHeldName(it.name);
       if (it.type === 'desk') {
-        toast(`✋ ${ICON[it.type]} ${it.name} — Scroll untuk naik/turun. Posisi horizontal terkunci.`);
+        toast(`${ICON[it.type]} ${it.name} — Scroll untuk naik/turun. Posisi horizontal terkunci.`);
       } else {
-        toast(`✋ ${ICON[it.type]} ${it.name} — Klik/tap lagi untuk meletakkan`);
+        toast(`${ICON[it.type]} ${it.name} — Klik/tap lagi untuk meletakkan`);
       }
     }
   }, [toast]);
@@ -516,7 +516,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
     if (k === 'c') {
       w.sitting = !w.sitting;
       setUi(p => ({ ...p, sitting: w.sitting }));
-      toast(w.sitting ? '🪑 Duduk — arahkan pandangan ke monitor, apakah sejajar mata?' : '🧍 Berdiri');
+      toast(w.sitting ? 'Duduk — arahkan pandangan ke monitor, apakah sejajar mata?' : 'Berdiri');
       if (w.sitting) { w.yaw = Math.PI; w.pitch = 0; }
     }
     if (k === 'g') { w.showGuide = !w.showGuide; setUi(p => ({ ...p, guide: w.showGuide })); }
@@ -848,7 +848,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
           <div className="absolute inset-0 flex items-center justify-center"><div className={`w-1.5 h-1.5 rounded-full ${heldName ? 'bg-green-400' : 'bg-white/90'}`} /></div>
           {heldName && (
             <div className="absolute top-9 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] bg-green-700/90 text-white px-2.5 py-1 rounded-lg border border-green-400/40">
-              ✋ {heldName} — klik/tap untuk lepas
+              {heldName} — klik/tap untuk lepas
             </div>
           )}
           {!heldName && ui.hoverName && (
@@ -875,8 +875,8 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <IconBtn onClick={() => { document.exitPointerLock(); setUi(p => ({ ...p, help: true })); }} label="Bantuan">❓</IconBtn>
-          <IconBtn onClick={() => { document.exitPointerLock(); setGs(p => ({ ...p, showSettings: true })); }} label="Pengaturan">⚙️</IconBtn>
+          <IconBtn onClick={() => { document.exitPointerLock(); setUi(p => ({ ...p, help: true })); }} label="Bantuan">?</IconBtn>
+          <IconBtn onClick={() => { document.exitPointerLock(); setGs(p => ({ ...p, showSettings: true })); }} label="Pengaturan">...</IconBtn>
           <IconBtn onClick={() => { document.exitPointerLock(); onExit(); }} label="Keluar" danger>✕</IconBtn>
         </div>
       </div>
@@ -885,7 +885,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
       <div className="absolute top-4 left-4 w-[260px]">
         <div className="bg-black/65 backdrop-blur-md rounded-2xl border border-white/10 overflow-hidden">
           <div className="px-4 py-2.5 border-b border-white/10 flex items-center justify-between">
-            <h3 className="text-white text-[13px] font-bold">📋 Langkah Ergonomi</h3>
+            <h3 className="text-white text-[13px] font-bold">Langkah Ergonomi</h3>
             <span className="text-[11px] text-slate-400">{steps.filter(s => s.done).length}/{steps.length}</span>
           </div>
           <div className="p-2 space-y-1">
@@ -893,13 +893,13 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
           </div>
           {allDone && (
             <button onClick={onEvaluate} className="w-full py-3 text-white font-bold text-sm" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
-              ✅ Semua selesai — Lihat Hasil
+              Semua selesai — Lihat Hasil
             </button>
           )}
         </div>
         {!allDone && (
           <button onClick={onEvaluate} className="mt-2 w-full py-2.5 rounded-xl bg-white/10 backdrop-blur-md border border-white/15 text-white text-[13px] font-semibold hover:bg-white/20 transition">
-            📊 Evaluasi Sekarang
+            Evaluasi Sekarang
           </button>
         )}
       </div>
@@ -932,7 +932,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
       {/* ══ Petunjuk bawah kiri ══ */}
       {!selected && !heldName && (
         <div className="absolute bottom-4 left-4 bg-black/55 backdrop-blur-md rounded-xl px-4 py-3 border border-white/10 max-w-[270px]">
-          <p className="text-white text-[12px] font-semibold mb-1">✋ Cara memindahkan objek</p>
+          <p className="text-white text-[12px] font-semibold mb-1">Cara memindahkan objek</p>
           <p className="text-slate-400 text-[11px] leading-relaxed">
             {isMobile
               ? 'Arahkan crosshair ke objek → tap tengah layar → objek mengikuti pandangan → tap lagi untuk letakkan.'
@@ -987,13 +987,13 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
             <button
               onTouchStart={e => { e.preventDefault(); world.current.sitting = !world.current.sitting; setUi(p => ({ ...p, sitting: world.current.sitting })); }}
               className="w-12 h-12 rounded-full bg-amber-500/80 border border-amber-300/40 text-white text-lg grid place-items-center backdrop-blur-sm active:scale-90 transition"
-            >🪑</button>
+            >Duduk</button>
             <button
               onTouchStart={e => { e.preventDefault(); if (heldId.current) commitHeld(); else if (world.current.hoveredId) pickupObject(world.current.hoveredId); }}
               className={`w-12 h-12 rounded-full border text-white text-lg grid place-items-center backdrop-blur-sm active:scale-90 transition ${
                 heldName ? 'bg-green-500/80 border-green-300/40' : 'bg-white/20 border-white/20'
               }`}
-            >{heldName ? '📤' : '✋'}</button>
+            >{heldName ? 'Lepas' : 'Ambil'}</button>
           </div>
         </>
       )}
@@ -1001,7 +1001,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
       {/* ══ Status duduk ══ */}
       {ui.sitting && (
         <div className="absolute bottom-[112px] left-1/2 -translate-x-1/2 bg-amber-500/90 text-white text-[12px] font-semibold px-4 py-1.5 rounded-full backdrop-blur-sm shadow-lg whitespace-nowrap">
-          🪑 Mode duduk (profil: {gs.settings.userHeightCm} cm) · tinggi mata proporsional · <b>C</b> berdiri
+          Mode duduk (profil: {gs.settings.userHeightCm} cm) · tinggi mata proporsional · <b>C</b> berdiri
         </div>
       )}
 
@@ -1012,8 +1012,8 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
         </div>
       )}
 
-      {ui.help && <Modal title="❓ Bantuan" onClose={() => setUi(p => ({ ...p, help: false }))}><HelpBody isMobile={isMobile} userHeightCm={gs.settings.userHeightCm} /></Modal>}
-      {gs.showSettings && <Modal title="⚙️ Pengaturan" onClose={() => setGs(p => ({ ...p, showSettings: false }))}>
+      {ui.help && <Modal title="Bantuan" onClose={() => setUi(p => ({ ...p, help: false }))}><HelpBody isMobile={isMobile} userHeightCm={gs.settings.userHeightCm} /></Modal>}
+      {gs.showSettings && <Modal title="Pengaturan" onClose={() => setGs(p => ({ ...p, showSettings: false }))}>
         <SettingsBody settings={gs.settings} upd={upd} />
       </Modal>}
     </div>
@@ -1036,7 +1036,7 @@ function StepRow({ step, n, active, selected, onClick }: { step: ErgoStep; n: nu
   return (
     <button onClick={onClick}
       className={`w-full text-left rounded-xl px-2.5 py-2 transition flex items-start gap-2.5 ${selected ? 'bg-indigo-500/25 ring-1 ring-indigo-400/50' : active ? 'bg-white/10' : 'hover:bg-white/5'}`}>
-      <span className="text-base leading-none mt-0.5">{step.done ? '✅' : step.icon}</span>
+      <span className="text-base leading-none mt-0.5">{step.done ? '✓' : step.icon}</span>
       <span className="flex-1 min-w-0">
         <span className="flex items-center gap-1.5">
           <span className={`text-[12px] font-semibold truncate ${step.done ? 'text-emerald-300' : 'text-white'}`}>{n}. {step.title}</span>
@@ -1070,7 +1070,7 @@ function AdjustCard({ item, all, onAct, onClose, guide, onToggleGuide, userHeigh
           <span className="text-white font-bold text-sm flex-1">{item.name}</span>
           <button onClick={onToggleGuide} title="Tampilkan posisi ideal"
             className={`text-[10px] px-2 py-1 rounded-lg border transition ${guide ? 'bg-emerald-500/25 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/15 text-slate-400'}`}>
-            👁 Panduan
+            Panduan
           </button>
           <button onClick={onClose} className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-xs grid place-items-center">✕</button>
         </div>
@@ -1103,7 +1103,7 @@ function AdjustCard({ item, all, onAct, onClose, guide, onToggleGuide, userHeigh
             <span>{m.barMin} {m.unit}</span><span className="text-emerald-500/80">zona ideal</span><span>{m.barMax} {m.unit}</span>
           </div>
 
-          <p className="text-[12px] mt-2 leading-snug" style={{ color: col }}>💬 {s.hint}</p>
+          <p className="text-[12px] mt-2 leading-snug" style={{ color: col }}>{s.hint}</p>
         </div>
 
         {/* kontrol */}
@@ -1131,7 +1131,7 @@ function AdjustCard({ item, all, onAct, onClose, guide, onToggleGuide, userHeigh
             <div className="flex flex-col gap-1 justify-center items-center" style={{ width: 96 }}>
               <span className="text-[9px] text-slate-500 text-center">GESER</span>
               <div className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/30">
-                <span className="text-[18px]">🔒</span>
+                <span className="text-[18px]">Terkunci</span>
                 <span className="text-[9px] text-slate-500 text-center leading-tight">Posisi<br/>terkunci</span>
               </div>
             </div>
@@ -1144,7 +1144,7 @@ function AdjustCard({ item, all, onAct, onClose, guide, onToggleGuide, userHeigh
             </div>
           </div>
           <div className="flex-1 flex flex-col justify-center pl-1">
-            <p className="text-[10px] text-slate-400 leading-snug">💡 {item.ergoTip}</p>
+            <p className="text-[10px] text-slate-400 leading-snug">{item.ergoTip}</p>
             <p className="text-[9px] text-slate-600 mt-1">Keyboard: R/T · ↑↓←→ · Q/E</p>
           </div>
         </div>
@@ -1174,14 +1174,14 @@ function HelpBody({ isMobile = false, userHeightCm = 170 }: { isMobile?: boolean
   return (
     <div className="space-y-3 text-[13px] text-slate-300">
       <div className="bg-slate-900/60 rounded-xl p-3.5">
-        <h3 className="text-white font-bold mb-2 text-sm">{isMobile ? '📱' : '🎮'} Kontrol</h3>
+        <h3 className="text-white font-bold mb-2 text-sm">Kontrol</h3>
         <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
           {isMobile ? (<>
             <b className="text-indigo-300">Joystick Kiri</b><span>Berjalan</span>
             <b className="text-indigo-300">Joystick Kanan</b><span>Melihat sekeliling</span>
             <b className="text-indigo-300">Tap Tengah Layar</b><span>Ambil / Letakkan objek</span>
-            <b className="text-indigo-300">Tombol ✋</b><span>Angkat objek yang dilihat</span>
-            <b className="text-indigo-300">Tombol 🪑</b><span>Duduk / berdiri di kursi</span>
+            <b className="text-indigo-300">Tombol Ambil</b><span>Angkat objek yang dilihat</span>
+            <b className="text-indigo-300">Tombol Duduk</b><span>Duduk / berdiri di kursi</span>
           </>) : (<>
             <b className="text-indigo-300">W A S D</b><span>Berjalan</span>
             <b className="text-indigo-300">Mouse</b><span>Melihat sekeliling</span>
@@ -1198,14 +1198,14 @@ function HelpBody({ isMobile = false, userHeightCm = 170 }: { isMobile?: boolean
         </div>
       </div>
       <div className="bg-slate-900/60 rounded-xl p-3.5">
-        <h3 className="text-white font-bold mb-2 text-sm">🎯 Cara Bermain</h3>
+        <h3 className="text-white font-bold mb-2 text-sm">Cara Bermain</h3>
         <ol className="list-decimal list-inside space-y-1 text-xs leading-relaxed">
           {isMobile ? (<>
             <li>Gunakan <b className="text-white">joystick kiri</b> untuk jalan & joystick kanan untuk lihat.</li>
-            <li>Arahkan crosshair ke objek — tap tengah layar atau tombol ✋ untuk <b className="text-white">mengambil</b>.</li>
+            <li>Arahkan crosshair ke objek — tap tengah layar atau tombol Ambil untuk <b className="text-white">mengambil</b>.</li>
             <li>Objek bersinar <b className="text-emerald-400">hijau</b> dan mengikuti pandangan Anda.</li>
             <li>Tap lagi untuk <b className="text-white">meletakkan</b> — skor ergonomi langsung berubah.</li>
-            <li>Tekan tombol 🪑 untuk duduk dan memeriksa posisi monitor.</li>
+            <li>Tekan tombol Duduk untuk duduk dan memeriksa posisi monitor.</li>
             <li>Selesaikan 6 langkah lalu klik <b className="text-white">Evaluasi</b>.</li>
           </>) : (<>
             <li>Klik layar untuk mengunci kursor, lalu <b className="text-white">WASD</b> untuk jalan.</li>
@@ -1219,15 +1219,15 @@ function HelpBody({ isMobile = false, userHeightCm = 170 }: { isMobile?: boolean
         </ol>
       </div>
       <div className="bg-emerald-900/25 border border-emerald-500/20 rounded-xl p-3.5">
-        <h3 className="text-emerald-400 font-bold mb-2 text-sm">📐 Acuan Standar (Profil {userHeightCm} cm)</h3>
+        <h3 className="text-emerald-400 font-bold mb-2 text-sm">Acuan Standar (Profil {userHeightCm} cm)</h3>
         <ul className="space-y-1 text-xs">
-          <li>🪑 Tinggi dudukan kursi <b className="text-white">±{Math.round(targets.chairSeat * 100)} cm</b></li>
-          <li>🪵 Tinggi permukaan meja <b className="text-white">±{Math.round(targets.deskSurface * 100)} cm</b></li>
-          <li>💪 Selisih siku–meja <b className="text-white">±{Math.round(targets.elbowGap * 100)} cm</b></li>
-          <li>🖥️ Tengah layar <b className="text-white">±{Math.round(targets.monitorCenter * 100)} cm</b> (sejajar mata)</li>
-          <li>📏 Jarak monitor <b className="text-white">{Math.round(targets.monitorDist * 100)} cm</b></li>
-          <li>⌨️ Keyboard <b className="text-white">10–15 cm</b> dari tepi meja</li>
-          <li>🖱️ Mouse <b className="text-white">±28 cm</b> dari tengah keyboard</li>
+          <li>Tinggi dudukan kursi <b className="text-white">±{Math.round(targets.chairSeat * 100)} cm</b></li>
+          <li>Tinggi permukaan meja <b className="text-white">±{Math.round(targets.deskSurface * 100)} cm</b></li>
+          <li>Selisih siku–meja <b className="text-white">±{Math.round(targets.elbowGap * 100)} cm</b></li>
+          <li>Tengah layar <b className="text-white">±{Math.round(targets.monitorCenter * 100)} cm</b> (sejajar mata)</li>
+          <li>Jarak monitor <b className="text-white">{Math.round(targets.monitorDist * 100)} cm</b></li>
+          <li>Keyboard <b className="text-white">10–15 cm</b> dari tepi meja</li>
+          <li>Mouse <b className="text-white">±28 cm</b> dari tengah keyboard</li>
         </ul>
       </div>
     </div>

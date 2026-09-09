@@ -11,10 +11,14 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const deepCopy = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
 const ICON: Record<string, string> = { desk: '', chair: '', monitor: '', keyboard: '', mouse: '', lamp: '' };
 const isTouchDevice = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
-type OrientationScreen = Screen & { orientation?: { lock?: (orientation: 'landscape') => Promise<void> } };
+type OrientationScreen = Screen & { orientation?: { lock?: (orientation: 'landscape') => Promise<void>; unlock?: () => void } };
 const requestLandscape = async () => {
   try { await document.documentElement.requestFullscreen?.(); } catch {}
   try { await (screen as OrientationScreen).orientation?.lock?.('landscape'); } catch {}
+};
+const releaseLandscape = () => {
+  try { (screen as OrientationScreen).orientation?.unlock?.(); } catch {}
+  if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
 };
 
 const getStoredHeight = (): number => {
@@ -72,13 +76,17 @@ export default function App() {
     setGs(p => ({ ...p, phase: 'playing' }));
   }, [gs.settings.device]);
   const evaluate = useCallback(() => {
+    if (gs.settings.device === 'mobile') releaseLandscape();
     setGs(p => ({
       ...p,
       phase: 'results',
       score: calculateErgonomicScore(furniture, gs.settings.userHeightCm),
     }));
-  }, [furniture, gs.settings.userHeightCm]);
-  const menu = useCallback(() => setGs(p => ({ ...p, phase: 'menu', score: null })), []);
+  }, [furniture, gs.settings.device, gs.settings.userHeightCm]);
+  const menu = useCallback(() => {
+    if (gs.settings.device === 'mobile') releaseLandscape();
+    setGs(p => ({ ...p, phase: 'menu', score: null }));
+  }, [gs.settings.device]);
 
   if (gs.phase === 'menu') return <Menu onStart={start} settings={gs.settings} upd={upd} />;
   if (gs.phase === 'tutorial') return <Tutorial onDone={play} isMobile={gs.settings.device === 'mobile'} />;

@@ -499,6 +499,7 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
 
 
   return {
+    gl,
     resize() {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = Math.floor(window.innerWidth * dpr);
@@ -522,19 +523,24 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
       return id;
     },
 
-    frame(time: number) {
+    frame(time: number, xr?: { projection: Float32Array; view: Float32Array; viewport: { x: number; y: number; width: number; height: number }; clear: boolean }) {
       const w = getWorld();
       now = time;
+      if (xr) gl.viewport(xr.viewport.x, xr.viewport.y, xr.viewport.width, xr.viewport.height);
       gl.enable(gl.DEPTH_TEST);
       gl.enable(gl.CULL_FACE);
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       const d = w.darkMode;
       gl.clearColor(d?0.05:0.55, d?0.06:0.68, d?0.09:0.82, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      if (!xr || xr.clear) gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.useProgram(prog);
 
-      vpM = mul(persp(68*Math.PI/180, canvas.width/canvas.height, 0.04, 60), lookDir(w.camX,w.camY,w.camZ,w.yaw,w.pitch));
+      vpM = xr
+        // Referensi XR dimulai dari posisi headset nyata; offset X/Z menjaga titik mulai VR
+        // sama dengan kamera gameplay biasa tanpa mengubah tinggi fisik pemain.
+        ? mul(xr.projection, mul(xr.view, T(-w.camX, 0, -w.camZ)))
+        : mul(persp(68*Math.PI/180, canvas.width/canvas.height, 0.04, 60), lookDir(w.camX,w.camY,w.camZ,w.yaw,w.pitch));
       camP = [w.camX, w.camY, w.camZ];
       curSel = false; curHov = false; curGhost = false; curHeld = false;
 

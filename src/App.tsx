@@ -5,7 +5,7 @@ import {
   calculateErgonomicScore, getItemScore, getMetric, getSteps,
   normalizeDeskItems, getErgonomicTargets, ErgoStep, deskSurfaceY,
 } from './game/ergonomics';
-import { createRenderer, RenderWorld, raycastPlane } from './game/renderer';
+import { createRenderer, RenderWorld, raycastPlane, pickBox, rayHit } from './game/renderer';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const deepCopy = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
@@ -16,6 +16,7 @@ const requestLandscape = async () => {
   try { await document.documentElement.requestFullscreen?.(); } catch {}
   try { await (screen as OrientationScreen).orientation?.lock?.('landscape'); } catch {}
 };
+type WebXrNavigator = Navigator & { xr?: { isSessionSupported: (mode: 'immersive-vr') => Promise<boolean>; requestSession: (mode: 'immersive-vr', options?: object) => Promise<any> } };
 const releaseLandscape = () => {
   try { (screen as OrientationScreen).orientation?.unlock?.(); } catch {}
   if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
@@ -89,7 +90,7 @@ export default function App() {
   }, [gs.settings.device]);
 
   if (gs.phase === 'menu') return <Menu onStart={start} settings={gs.settings} upd={upd} />;
-  if (gs.phase === 'tutorial') return <Tutorial onDone={play} isMobile={gs.settings.device === 'mobile'} />;
+  if (gs.phase === 'tutorial') return <Tutorial onDone={play} isMobile={gs.settings.device === 'mobile'} isVr={gs.settings.device === 'vr'} />;
   if (gs.phase === 'results') return <Results score={gs.score!} userHeightCm={gs.settings.userHeightCm} onMenu={menu} onRetry={start} />;
   return <Game furniture={furniture} setFurniture={setFurniture} gs={gs} setGs={setGs} upd={upd} onEvaluate={evaluate} onExit={menu} />;
 }
@@ -122,6 +123,7 @@ function Menu({ onStart, settings, upd }: { onStart: () => void; settings: GameS
           <div className="flex bg-slate-800/50 rounded-xl p-1 w-72 border border-slate-700/50">
             <button onClick={() => upd({ device: 'desktop' })} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${settings.device === 'desktop' ? 'bg-indigo-500/30 text-indigo-200 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>Desktop</button>
             <button onClick={() => upd({ device: 'mobile' })} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${settings.device === 'mobile' ? 'bg-indigo-500/30 text-indigo-200 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>Mobile</button>
+            <button onClick={() => upd({ device: 'vr' })} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${settings.device === 'vr' ? 'bg-indigo-500/30 text-indigo-200 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>VR</button>
           </div>
 
           <button onClick={() => setModal('set')} className="w-72 py-3 rounded-2xl text-indigo-200 font-semibold border border-indigo-400/25 hover:bg-indigo-500/15 transition">Pengaturan</button>
@@ -282,10 +284,10 @@ function Slider({ label, v, on }: { label: string; v: number; on: (n: number) =>
 }
 
 /* ═══════════════════════ TUTORIAL ═══════════════════════ */
-function Tutorial({ onDone, isMobile }: { onDone: () => void; isMobile: boolean }) {
+function Tutorial({ onDone, isMobile, isVr }: { onDone: () => void; isMobile: boolean; isVr: boolean }) {
   const [i, setI] = useState(0);
   const steps = [
-    { ic: '', t: 'Jelajahi Ruangan', d: isMobile ? 'Gunakan D-pad kiri untuk berjalan, lalu geser area kanan layar untuk melihat sekeliling.' : 'Gunakan W A S D untuk berjalan dan gerakkan mouse untuk melihat sekeliling.', s: isMobile ? 'Game akan meminta mode lanskap saat Anda mulai.' : 'Klik layar dahulu untuk mengunci kursor.' },
+    { ic: '', t: 'Jelajahi Ruangan', d: isVr ? 'Masuk ke headset VR, lalu arahkan reticle + ke objek. Gunakan trigger controller atau pinch tangan untuk memilih.' : isMobile ? 'Gunakan D-pad kiri untuk berjalan, lalu geser area kanan layar untuk melihat sekeliling.' : 'Gunakan W A S D untuk berjalan dan gerakkan mouse untuk melihat sekeliling.', s: isVr ? 'Hand tracking aktif bila didukung perangkat.' : isMobile ? 'Game akan meminta mode lanskap saat Anda mulai.' : 'Klik layar dahulu untuk mengunci kursor.' },
     { ic: '', t: 'Ambil & Pindahkan Objek', d: isMobile ? 'Tap objek (kursi, meja, dll) → objek bersinar hijau → geser layar → objek mengikuti pandangan → tap lagi untuk meletakkan.' : 'Arahkan crosshair ke objek → Klik kiri → objek bersinar hijau & mengikuti pandangan → Klik kiri lagi untuk meletakkan.', s: 'Skor ergonomi berubah otomatis setiap objek dilepas.' },
     { ic: '', t: 'Pantau Skor Real-Time', d: 'Panel kiri menampilkan 6 langkah ergonomi. Skor berubah langsung saat objek dipindah.', s: 'Kejar zona hijau di setiap langkah!' },
     { ic: '', t: 'Kejar Zona Hijau', d: 'Setiap langkah punya penunjuk target. Klik langkah di panel kiri untuk memilih objek langsung.', s: 'Bayangan hijau di ruangan menunjukkan posisi ideal.' },
@@ -395,7 +397,10 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
   onEvaluate: () => void; onExit: () => void;
 }) {
   const isMobile = gs.settings.device === 'mobile';
+  const isVr = gs.settings.device === 'vr';
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const startVrRef = useRef<null | (() => void)>(null);
+  const [vrStatus, setVrStatus] = useState<'idle' | 'ready' | 'active' | 'unsupported'>('idle');
   const initialCamY = 1.65 * ((gs.settings.userHeightCm || 170) / 170);
   const world = useRef<RenderWorld & { keys: Record<string, boolean>; locked: boolean; sitting: boolean; sitT: number; moveSpeed: number; sens: number; touchSens: number; raf: number; userHeightCm: number }>({
     camX: 0, camY: initialCamY, camZ: 0.9, yaw: Math.PI, pitch: -0.12,
@@ -607,9 +612,66 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
     document.addEventListener('keydown', onKey);
     document.addEventListener('keyup', onKeyUp);
 
+    let xrSession: any = null;
+    let xrStopped = false;
+    const xr = (navigator as WebXrNavigator).xr;
+    const chooseVrTarget = (origin: [number, number, number], direction: [number, number, number]) => {
+      let nearest = Infinity;
+      let target: FurnitureItem | null = null;
+      for (const item of world.current.furniture) {
+        if (world.current.sitting && item.type === 'chair') continue;
+        const hit = rayHit(origin, direction, pickBox(item).p, pickBox(item).h);
+        if (hit !== null && hit > 0.15 && hit < 4.5 && hit < nearest) { nearest = hit; target = item; }
+      }
+      if (!target) return;
+      if (heldId.current) commitHeld();
+      else pickupObject(target.id);
+    };
+    const startVr = async () => {
+      if (!xr || xrSession) return;
+      const XRLayer = (window as Window & { XRWebGLLayer?: new (session: any, context: WebGLRenderingContext) => any }).XRWebGLLayer;
+      if (!XRLayer) { setVrStatus('unsupported'); return; }
+      try {
+        await (renderer.gl as WebGLRenderingContext & { makeXRCompatible?: () => Promise<void> }).makeXRCompatible?.();
+        const session = await xr.requestSession('immersive-vr', { requiredFeatures: ['local-floor'], optionalFeatures: ['hand-tracking'] });
+        xrSession = session;
+        const layer = new XRLayer(session, renderer.gl);
+        await session.updateRenderState({ baseLayer: layer });
+        const referenceSpace = await session.requestReferenceSpace('local-floor');
+        setVrStatus('active');
+        session.addEventListener('selectstart', (event: any) => {
+          const pose = event.frame?.getPose(event.inputSource?.targetRaySpace, referenceSpace);
+          if (!pose) return;
+          const p = pose.transform.position, q = pose.transform.orientation;
+          chooseVrTarget([p.x + world.current.camX, p.y, p.z + world.current.camZ], [-2 * (q.x * q.z + q.w * q.y), -2 * (q.y * q.z - q.w * q.x), -(1 - 2 * (q.x * q.x + q.y * q.y))]);
+        });
+        session.addEventListener('end', () => { xrSession = null; if (!xrStopped) setVrStatus('ready'); });
+        const renderVr = (time: number, frame: any) => {
+          if (!xrSession) return;
+          xrSession.requestAnimationFrame(renderVr);
+          const pose = frame.getViewerPose(referenceSpace);
+          const baseLayer = xrSession.renderState.baseLayer;
+          if (!pose || !baseLayer) return;
+          renderer.gl.bindFramebuffer(renderer.gl.FRAMEBUFFER, baseLayer.framebuffer);
+          pose.views.forEach((view: any, index: number) => {
+            const viewport = baseLayer.getViewport(view);
+            renderer.frame(time / 1000, { projection: view.projectionMatrix, view: view.transform.inverse.matrix, viewport, clear: index === 0 });
+          });
+        };
+        session.requestAnimationFrame(renderVr);
+      } catch {
+        setVrStatus('unsupported');
+      }
+    };
+    startVrRef.current = startVr;
+    if (isVr) {
+      if (!xr) setVrStatus('unsupported');
+      else void xr.isSessionSupported('immersive-vr').then(ok => setVrStatus(ok ? 'ready' : 'unsupported')).catch(() => setVrStatus('unsupported'));
+    }
+
     // Desktop pointer lock
     let cleanupDesktop: (() => void) | null = null;
-    if (!isMobile) {
+    if (!isMobile && !isVr) {
       const onCanvasClick = () => {
         const w = world.current;
         if (heldId.current) { commitHeld(); return; }
@@ -704,7 +766,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
       const w = world.current;
 
       // ── Gerak Desktop ──
-      if (!isMobile && w.locked && !w.sitting) {
+      if (!isMobile && !isVr && w.locked && !w.sitting) {
         const sp = (w.moveSpeed / 50) * 2.4 * dt;
         const sy = Math.sin(w.yaw), cy = Math.cos(w.yaw);
         if (w.keys['w'] || w.keys['arrowup']) { w.camX += sy * sp; w.camZ += cy * sp; }
@@ -854,6 +916,9 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
     world.current.raf = requestAnimationFrame(loop);
 
     return () => {
+      xrStopped = true;
+      startVrRef.current = null;
+      if (xrSession) void xrSession.end();
       cancelAnimationFrame(world.current.raf);
       window.removeEventListener('resize', onResize);
       document.removeEventListener('keydown', onKey);
@@ -861,7 +926,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
       cleanupDesktop?.();
       cleanupMobile?.();
     };
-  }, [isMobile, onKey, onKeyUp, commitHeld, pickupObject]);
+  }, [isMobile, isVr, onKey, onKeyUp, commitHeld, pickupObject]);
 
   const allDone = steps.every(s => s.done);
   const sc = score.total;
@@ -870,6 +935,23 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
   return (
     <div className="fixed inset-0 bg-black overflow-hidden select-none">
       <canvas ref={canvasRef} className="block w-full h-full" />
+
+      {isVr && vrStatus !== 'active' && (
+        <div className="absolute inset-0 z-50 grid place-items-center bg-black/55 backdrop-blur-sm">
+          <div className="w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-indigo-400/30 bg-slate-950/90 p-6 text-center shadow-2xl">
+            <p className="text-lg font-bold text-white">Mode VR</p>
+            {vrStatus === 'unsupported' ? (
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">Browser atau headset ini belum mendukung WebXR immersive VR. Gunakan browser headset yang kompatibel.</p>
+            ) : (
+              <>
+                <p className="mt-2 text-sm leading-relaxed text-slate-400">Gunakan headset, arahkan tanda + ke objek, lalu tekan trigger atau lakukan pinch untuk mengambil/meletakkan objek.</p>
+                <button onClick={() => startVrRef.current?.()} className="mt-5 w-full rounded-xl bg-indigo-500 py-3 text-sm font-bold text-white hover:bg-indigo-400">Masuk VR</button>
+              </>
+            )}
+            <button onClick={onExit} className="mt-3 text-xs font-semibold text-slate-400 hover:text-white">Kembali ke menu</button>
+          </div>
+        </div>
+      )}
 
       {isMobile && needsLandscape && (
         <div className="absolute inset-0 z-[60] grid place-items-center bg-slate-950/95 p-6 text-center">
@@ -885,8 +967,12 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
       {/* Crosshair */}
       <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
         <div className="relative">
-          <div className={`w-6 h-6 rounded-full border-2 transition-colors ${heldName ? 'border-green-400 shadow-[0_0_12px_rgba(74,222,128,0.8)]' : 'border-white/40'}`} />
-          <div className="absolute inset-0 flex items-center justify-center"><div className={`w-1.5 h-1.5 rounded-full ${heldName ? 'bg-green-400' : 'bg-white/90'}`} /></div>
+          {isVr ? (
+            <div className={`h-8 w-8 text-center text-3xl font-light leading-7 drop-shadow-[0_0_4px_rgba(0,0,0,0.95)] ${heldName ? 'text-green-400' : 'text-white'}`}>+</div>
+          ) : <>
+            <div className={`w-6 h-6 rounded-full border-2 transition-colors ${heldName ? 'border-green-400 shadow-[0_0_12px_rgba(74,222,128,0.8)]' : 'border-white/40'}`} />
+            <div className="absolute inset-0 flex items-center justify-center"><div className={`w-1.5 h-1.5 rounded-full ${heldName ? 'bg-green-400' : 'bg-white/90'}`} /></div>
+          </>}
           {heldName && (
             <div className="absolute top-9 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] bg-green-700/90 text-white px-2.5 py-1 rounded-lg border border-green-400/40">
               {heldName} — klik/tap untuk lepas

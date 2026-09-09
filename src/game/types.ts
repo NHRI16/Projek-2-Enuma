@@ -42,7 +42,7 @@ export interface GameSettings {
   volume: number;
   darkMode: boolean;
   graphicsQuality: 'low' | 'medium' | 'high';
-  device: 'desktop' | 'mobile';
+  device: 'desktop' | 'mobile' | 'vr';
   userHeightCm: number;
 }
 

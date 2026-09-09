@@ -1036,7 +1036,7 @@ function StepRow({ step, n, active, selected, onClick }: { step: ErgoStep; n: nu
   return (
     <button onClick={onClick}
       className={`w-full text-left rounded-xl px-2.5 py-2 transition flex items-start gap-2.5 ${selected ? 'bg-indigo-500/25 ring-1 ring-indigo-400/50' : active ? 'bg-white/10' : 'hover:bg-white/5'}`}>
-      <span className="text-base leading-none mt-0.5">{step.done ? '✓' : step.icon}</span>
+      <span className="w-3 shrink-0 text-center text-base leading-none mt-0.5">{step.done ? '✓' : step.icon}</span>
       <span className="flex-1 min-w-0">
         <span className="flex items-center gap-1.5">
           <span className={`text-[12px] font-semibold truncate ${step.done ? 'text-emerald-300' : 'text-white'}`}>{n}. {step.title}</span>

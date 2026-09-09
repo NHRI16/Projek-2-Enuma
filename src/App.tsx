@@ -728,15 +728,16 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
         for (let i = 0; i < e.changedTouches.length; i++) {
           const t = e.changedTouches[i];
           if (joyLook.current.active && t.identifier === joyLook.current.id) {
-            const rawDx = t.clientX - joyLook.current.x, rawDy = t.clientY - joyLook.current.y;
-            const len = Math.hypot(rawDx, rawDy);
-            const capped = Math.min(len, 60);
-            joyLook.current.dx = (rawDx / (len || 1)) * capped;
-            joyLook.current.dy = (rawDy / (len || 1)) * capped;
-            // Apply look immediately
+            const dx = t.clientX - joyLook.current.x, dy = t.clientY - joyLook.current.y;
+            joyLook.current.x = t.clientX;
+            joyLook.current.y = t.clientY;
+            joyLook.current.dx += dx;
+            joyLook.current.dy += dy;
+            // Tap atau jitter kecil diabaikan; setelah melewati dead zone, putar hanya sejauh drag jari.
+            if (Math.hypot(joyLook.current.dx, joyLook.current.dy) < 6) continue;
             const touchScale = world.current.touchSens / 100 * 0.003;
-            world.current.yaw -= (rawDx - joyLook.current.dx) * touchScale;
-            world.current.pitch = clamp(world.current.pitch - (rawDy - joyLook.current.dy) * touchScale, -1.25, 1.25);
+            world.current.yaw -= dx * touchScale;
+            world.current.pitch = clamp(world.current.pitch - dy * touchScale, -1.25, 1.25);
           }
         }
       };
@@ -779,7 +780,6 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
 
       // ── Gerak Mobile (D-pad) ──
       if (isMobile && !w.sitting) {
-        const jl = joyLook.current;
         if (w.keys['w'] || w.keys['s'] || w.keys['a'] || w.keys['d']) {
           const sp = (w.moveSpeed / 50) * 2.4 * dt;
           const sy = Math.sin(w.yaw), cy = Math.cos(w.yaw);
@@ -789,11 +789,6 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
           if (w.keys['d']) { w.camX -= cy * sp; w.camZ += sy * sp; }
           // Batas dinding ruangan (mobile): X ±2.34, Z dari -1.94 s/d +2.62
           w.camX = clamp(w.camX, -2.34, 2.34); w.camZ = clamp(w.camZ, -1.94, 2.62);
-        }
-        if (jl.active) {
-          const sens = w.touchSens / 6000 * 60;
-          w.yaw -= jl.dx * sens * dt;
-          w.pitch = clamp(w.pitch - jl.dy * sens * dt, -1.25, 1.25);
         }
       }
 

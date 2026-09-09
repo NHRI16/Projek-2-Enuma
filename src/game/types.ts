@@ -42,6 +42,7 @@ export interface GameSettings {
   darkMode: boolean;
   graphicsQuality: 'low' | 'medium' | 'high';
   device: 'desktop' | 'mobile';
+  userHeightCm: number;
 }
 
 export interface GameState {

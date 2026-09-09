@@ -3,7 +3,7 @@ import { GameState, FurnitureItem, GameSettings, ErgonomicScore } from './game/t
 import { initialFurniture, initialGameState } from './game/initialData';
 import {
   calculateErgonomicScore, getItemScore, getMetric, getSteps,
-  normalizeDeskItems, ErgoStep, deskSurfaceY,
+  normalizeDeskItems, getErgonomicTargets, ErgoStep, deskSurfaceY,
 } from './game/ergonomics';
 import { createRenderer, RenderWorld, raycastPlane } from './game/renderer';
 
@@ -11,23 +11,69 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const deepCopy = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
 const ICON: Record<string, string> = { desk: '🪵', chair: '🪑', monitor: '🖥️', keyboard: '⌨️', mouse: '🖱️', lamp: '💡' };
 
+const getStoredHeight = (): number => {
+  try {
+    const s = localStorage.getItem('ergosim_user_height');
+    if (s) {
+      const n = parseInt(s, 10);
+      if (!isNaN(n) && n >= 140 && n <= 200) return n;
+    }
+  } catch {}
+  return 170;
+};
+
 export default function App() {
-  const [gs, setGs] = useState<GameState>(initialGameState);
-  const [furniture, setFurniture] = useState<FurnitureItem[]>(() => normalizeDeskItems(deepCopy(initialFurniture)));
+  const [gs, setGs] = useState<GameState>(() => {
+    const storedHeight = getStoredHeight();
+    return {
+      ...initialGameState,
+      settings: {
+        ...initialGameState.settings,
+        userHeightCm: storedHeight,
+      },
+    };
+  });
+  const [furniture, setFurniture] = useState<FurnitureItem[]>(() => {
+    const storedHeight = getStoredHeight();
+    return normalizeDeskItems(deepCopy(initialFurniture), storedHeight);
+  });
+
+  const upd = useCallback((s: Partial<GameSettings>) => {
+    if (s.userHeightCm !== undefined) {
+      try {
+        localStorage.setItem('ergosim_user_height', String(s.userHeightCm));
+      } catch {}
+    }
+    setGs(p => ({ ...p, settings: { ...p.settings, ...s } }));
+  }, []);
+
+  // Update ideal positions & guide without changing actual furniture positions when userHeightCm changes
+  useEffect(() => {
+    setFurniture(prev => {
+      const next = deepCopy(prev);
+      normalizeDeskItems(next, gs.settings.userHeightCm);
+      return next;
+    });
+  }, [gs.settings.userHeightCm]);
 
   const start = useCallback(() => {
-    setFurniture(normalizeDeskItems(deepCopy(initialFurniture)));
+    setFurniture(normalizeDeskItems(deepCopy(initialFurniture), gs.settings.userHeightCm));
     setGs(p => ({ ...p, phase: 'tutorial', score: null }));
-  }, []);
+  }, [gs.settings.userHeightCm]);
   const play = useCallback(() => setGs(p => ({ ...p, phase: 'playing' })), []);
-  const evaluate = useCallback(() => setGs(p => ({ ...p, phase: 'results', score: calculateErgonomicScore(furniture) })), [furniture]);
+  const evaluate = useCallback(() => {
+    setGs(p => ({
+      ...p,
+      phase: 'results',
+      score: calculateErgonomicScore(furniture, gs.settings.userHeightCm),
+    }));
+  }, [furniture, gs.settings.userHeightCm]);
   const menu = useCallback(() => setGs(p => ({ ...p, phase: 'menu', score: null })), []);
-  const upd = useCallback((s: Partial<GameSettings>) => setGs(p => ({ ...p, settings: { ...p.settings, ...s } })), []);
 
   if (gs.phase === 'menu') return <Menu onStart={start} settings={gs.settings} upd={upd} />;
   if (gs.phase === 'tutorial') return <Tutorial onDone={play} />;
-  if (gs.phase === 'results') return <Results score={gs.score!} onMenu={menu} onRetry={start} />;
-  return <Game furniture={furniture} setFurniture={setFurniture} gs={gs} setGs={setGs} onEvaluate={evaluate} onExit={menu} />;
+  if (gs.phase === 'results') return <Results score={gs.score!} userHeightCm={gs.settings.userHeightCm} onMenu={menu} onRetry={start} />;
+  return <Game furniture={furniture} setFurniture={setFurniture} gs={gs} setGs={setGs} upd={upd} onEvaluate={evaluate} onExit={menu} />;
 }
 
 /* ═══════════════════════ MENU ═══════════════════════ */
@@ -69,21 +115,28 @@ function Menu({ onStart, settings, upd }: { onStart: () => void; settings: GameS
       {modal === 'about' && (
         <Modal title="📖 Panduan Ergonomi" onClose={() => setModal(null)}>
           <div className="space-y-3 text-sm text-slate-300">
-            <p><b className="text-white">Ergonomi</b> menyesuaikan lingkungan kerja dengan tubuh manusia agar kerja terasa nyaman, efisien, sehat, dan aman.</p>
-            {[
-              ['🪑', 'Tinggi kursi 42–48 cm', 'Kaki menapak rata di lantai, lutut ±90°, paha sejajar lantai.'],
-              ['🪵', 'Tinggi meja ±73 cm', 'Permukaan meja sejajar siku sehingga lengan membentuk 90°.'],
-              ['🖥️', 'Monitor sejajar mata', 'Tepi atas layar setinggi mata, jarak 50–70 cm, tegak lurus pandangan.'],
-              ['⌨️', 'Keyboard 10–15 cm dari tepi', 'Pergelangan tangan lurus, bukan menekuk ke atas.'],
-              ['🖱️', 'Mouse menempel keyboard', 'Siku tetap dekat badan, bahu rileks tidak terangkat.'],
-              ['💡', 'Cahaya dari samping', 'Menghindari pantulan silau pada layar yang melelahkan mata.'],
-              ['⏱️', 'Aturan 20-20-20', 'Tiap 20 menit, lihat objek 20 kaki (6 m) selama 20 detik.'],
-            ].map(([i, t, d]) => (
-              <div key={t} className="flex gap-3 bg-slate-900/50 rounded-xl p-3">
-                <span className="text-xl">{i}</span>
-                <div><p className="text-white font-semibold text-[13px]">{t}</p><p className="text-slate-400 text-xs mt-0.5">{d}</p></div>
-              </div>
-            ))}
+            <p><b className="text-white">Ergonomi</b> menyesuaikan lingkungan kerja dengan postur tubuh pengguna agar kerja terasa nyaman, efisien, sehat, dan aman.</p>
+            {(() => {
+              const targets = getErgonomicTargets(settings.userHeightCm);
+              return [
+                ['📏', `Profil Anda: ${settings.userHeightCm} cm`, `Target ideal disesuaikan: kursi ${Math.round(targets.chairSeat * 100)} cm, meja ${Math.round(targets.deskSurface * 100)} cm.`],
+                ['🪑', `Tinggi kursi ±${Math.round(targets.chairSeat * 100)} cm`, 'Kaki menapak rata di lantai, lutut ±90°, paha sejajar lantai.'],
+                ['🪵', `Tinggi meja ±${Math.round(targets.deskSurface * 100)} cm`, 'Permukaan meja sejajar siku sehingga lengan membentuk 90°.'],
+                ['🖥️', 'Monitor sejajar mata', `Tepi atas layar setinggi mata, jarak ${Math.round(targets.monitorDist * 100)} cm, tegak lurus pandangan.`],
+                ['⌨️', 'Keyboard 10–15 cm dari tepi', 'Pergelangan tangan lurus, bukan menekuk ke atas.'],
+                ['🖱️', 'Mouse menempel keyboard', 'Siku tetap dekat badan, bahu rileks tidak terangkat.'],
+                ['💡', 'Cahaya dari samping', 'Menghindari pantulan silau pada layar yang melelahkan mata.'],
+                ['⏱️', 'Aturan 20-20-20', 'Tiap 20 menit, lihat objek 20 kaki (6 m) selama 20 detik.'],
+              ].map(([i, t, d]) => (
+                <div key={t} className="flex gap-3 bg-slate-900/50 rounded-xl p-3">
+                  <span className="text-xl">{i}</span>
+                  <div><p className="text-white font-semibold text-[13px]">{t}</p><p className="text-slate-400 text-xs mt-0.5">{d}</p></div>
+                </div>
+              ));
+            })()}
+            <p className="text-[11px] text-slate-400 italic text-center pt-1">
+              ℹ️ Simulasi edukatif ini tidak menggantikan asesmen ergonomi profesional.
+            </p>
           </div>
         </Modal>
       )}
@@ -107,8 +160,86 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
 }
 
 function SettingsBody({ settings, upd }: { settings: GameSettings; upd: (s: Partial<GameSettings>) => void }) {
+  const heightVal = settings.userHeightCm || 170;
+  const targets = getErgonomicTargets(heightVal);
+
   return (
     <div className="space-y-5">
+      {/* Profil Ergonomi (Tinggi Badan) */}
+      <div className="bg-slate-900/80 border border-indigo-500/40 rounded-2xl p-4 space-y-3.5 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-sm font-bold text-white flex items-center gap-1.5">
+              📏 Profil Ergonomi Pengguna
+            </span>
+            <p className="text-[11px] text-slate-400">Target disesuaikan dengan tinggi tubuh Anda</p>
+          </div>
+          <div className="flex items-center gap-1 bg-slate-800 border border-indigo-400/50 rounded-lg px-2.5 py-1 shadow-inner">
+            <input
+              type="number"
+              min={140}
+              max={200}
+              value={heightVal}
+              onChange={e => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val)) upd({ userHeightCm: clamp(val, 140, 200) });
+              }}
+              className="w-12 bg-transparent text-right font-black text-indigo-300 text-sm focus:outline-none"
+            />
+            <span className="text-xs text-slate-400 font-semibold">cm</span>
+          </div>
+        </div>
+
+        <input
+          type="range"
+          min={140}
+          max={200}
+          step={1}
+          value={heightVal}
+          onChange={e => upd({ userHeightCm: +e.target.value })}
+          className="w-full h-2.5 rounded-full appearance-none cursor-pointer"
+          style={{
+            background: `linear-gradient(90deg, #6366f1 ${((heightVal - 140) / 60) * 100}%, #334155 ${((heightVal - 140) / 60) * 100}%)`,
+          }}
+        />
+        <div className="flex justify-between text-[10px] text-slate-400">
+          <span>140 cm</span>
+          <span className="text-indigo-400 font-bold">Acuan Default: 170 cm</span>
+          <span>200 cm</span>
+        </div>
+
+        {/* Target Personal Langsung */}
+        <div className="pt-2 border-t border-slate-700/60">
+          <p className="text-[11px] font-bold text-emerald-400 mb-2">🎯 Target Personal Langsung:</p>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="bg-slate-800/80 rounded-xl p-2.5 border border-slate-700/50">
+              <span className="text-slate-400 block text-[10px]">🪑 Dudukan Kursi</span>
+              <span className="text-white font-bold text-sm">{Math.round(targets.chairSeat * 100)} cm</span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-2.5 border border-slate-700/50">
+              <span className="text-slate-400 block text-[10px]">🪵 Permukaan Meja</span>
+              <span className="text-white font-bold text-sm">{Math.round(targets.deskSurface * 100)} cm</span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-2.5 border border-slate-700/50">
+              <span className="text-slate-400 block text-[10px]">💪 Selisih Siku–Meja</span>
+              <span className="text-white font-bold text-sm">{Math.round(targets.elbowGap * 100)} cm</span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-2.5 border border-slate-700/50">
+              <span className="text-slate-400 block text-[10px]">🖥️ Tengah Monitor</span>
+              <span className="text-white font-bold text-sm">{Math.round(targets.monitorCenter * 100)} cm</span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-2.5 border border-slate-700/50 col-span-2 flex justify-between items-center">
+              <span className="text-slate-400 text-[10px]">📏 Jarak Ideal Monitor</span>
+              <span className="text-white font-bold text-sm">{Math.round(targets.monitorDist * 100)} cm</span>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-[10px] text-amber-300/80 italic leading-relaxed pt-1">
+          ℹ️ Catatan: Hasil simulasi merupakan panduan edukasi ergonomi berbasis proporsional tubuh, bukan pengganti asesmen ergonomi profesional.
+        </p>
+      </div>
+
       <Slider label="🖱️ Sensitivitas Mouse" v={settings.mouseSensitivity} on={v => upd({ mouseSensitivity: v })} />
       <Slider label="🏃 Kecepatan Gerak" v={settings.moveSpeed} on={v => upd({ moveSpeed: v })} />
       <Slider label="🔊 Volume" v={settings.volume} on={v => upd({ volume: v })} />
@@ -166,7 +297,9 @@ function Tutorial({ onDone }: { onDone: () => void }) {
 }
 
 /* ═══════════════════════ RESULTS ═══════════════════════ */
-function Results({ score, onMenu, onRetry }: { score: ErgonomicScore; onMenu: () => void; onRetry: () => void }) {
+function Results({ score, userHeightCm, onMenu, onRetry }: { score: ErgonomicScore; userHeightCm: number; onMenu: () => void; onRetry: () => void }) {
+  const heightVal = userHeightCm || 170;
+  const targets = getErgonomicTargets(heightVal);
   const C = { green: '#22c55e', yellow: '#eab308', red: '#ef4444' }[score.color];
   const L = { green: 'Sangat Ergonomis! 🎉', yellow: 'Cukup Baik 👍', red: 'Perlu Perbaikan ⚠️' }[score.color];
   const rows: [string, number, string][] = [
@@ -179,7 +312,21 @@ function Results({ score, onMenu, onRetry }: { score: ErgonomicScore; onMenu: ()
   return (
     <div className="fixed inset-0 overflow-y-auto py-8 px-4" style={{ background: 'radial-gradient(ellipse at 50% 0%, #2d2a5e 0%, #14122b 55%, #0a0918 100%)' }}>
       <div className="max-w-lg mx-auto bg-slate-800/90 border border-slate-700 rounded-3xl p-7 shadow-2xl">
-        <h2 className="text-xl font-bold text-white text-center mb-5">📊 Hasil Evaluasi Ergonomi</h2>
+        <h2 className="text-xl font-bold text-white text-center mb-4">📊 Hasil Evaluasi Ergonomi</h2>
+        
+        {/* Ringkasan Profil Pengguna */}
+        <div className="bg-indigo-950/70 border border-indigo-500/40 rounded-2xl p-4 mb-5 text-center shadow-lg">
+          <p className="text-xs text-indigo-300 font-semibold mb-1">👤 Profil Ergonomi Personal</p>
+          <p className="text-sm font-bold text-white leading-relaxed">
+            Profil: tinggi badan <span className="text-indigo-300">{heightVal} cm</span> — target meja <span className="text-emerald-400">{Math.round(targets.deskSurface * 100)} cm</span>, target kursi <span className="text-emerald-400">{Math.round(targets.chairSeat * 100)} cm</span>.
+          </p>
+          <div className="flex justify-center gap-4 text-[11px] text-slate-300 mt-2 pt-2 border-t border-indigo-500/20">
+            <span>🖥️ Layar: {Math.round(targets.monitorCenter * 100)} cm</span>
+            <span>📏 Jarak: {Math.round(targets.monitorDist * 100)} cm</span>
+            <span>💪 Siku: {Math.round(targets.elbowGap * 100)} cm</span>
+          </div>
+        </div>
+
         <div className="flex flex-col items-center mb-6">
           <div className="relative w-36 h-36">
             <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
@@ -205,10 +352,13 @@ function Results({ score, onMenu, onRetry }: { score: ErgonomicScore; onMenu: ()
           <h3 className="text-white font-bold text-sm mb-2.5">💡 Catatan & Saran</h3>
           <ul className="space-y-1.5">{score.feedback.map((f, i) => <li key={i} className="text-[13px] text-slate-300 flex gap-2"><span className="text-indigo-400">•</span>{f}</li>)}</ul>
         </div>
-        <div className="flex gap-3 justify-center">
+        <div className="flex gap-3 justify-center mb-4">
           <button onClick={onRetry} className="px-6 py-3 rounded-xl text-white font-bold hover:scale-105 transition" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>🔄 Ulangi</button>
           <button onClick={onMenu} className="px-6 py-3 rounded-xl bg-slate-700 text-slate-200 font-medium hover:bg-slate-600">🏠 Menu</button>
         </div>
+        <p className="text-[11px] text-slate-400 text-center leading-relaxed max-w-sm mx-auto">
+          ℹ️ Catatan: Hasil simulasi merupakan panduan edukasi ergonomi berbasis referensi proporsional tubuh dan bukan pengganti asesmen ergonomi profesional medis/okupasional.
+        </p>
       </div>
     </div>
   );
@@ -221,18 +371,21 @@ type Action = 'up' | 'down' | 'fwd' | 'back' | 'left' | 'right' | 'rotL' | 'rotR
 type JoyState = { active: boolean; id: number; x: number; y: number; dx: number; dy: number };
 const mkJoy = (): JoyState => ({ active: false, id: -1, x: 0, y: 0, dx: 0, dy: 0 });
 
-function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
+function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
   furniture: FurnitureItem[]; setFurniture: React.Dispatch<React.SetStateAction<FurnitureItem[]>>;
   gs: GameState; setGs: React.Dispatch<React.SetStateAction<GameState>>;
+  upd: (s: Partial<GameSettings>) => void;
   onEvaluate: () => void; onExit: () => void;
 }) {
   const isMobile = gs.settings.device === 'mobile';
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const world = useRef<RenderWorld & { keys: Record<string, boolean>; locked: boolean; sitting: boolean; sitT: number; moveSpeed: number; sens: number; raf: number }>({
-    camX: 0, camY: 1.65, camZ: 0.9, yaw: Math.PI, pitch: -0.12,
+  const initialCamY = 1.65 * ((gs.settings.userHeightCm || 170) / 170);
+  const world = useRef<RenderWorld & { keys: Record<string, boolean>; locked: boolean; sitting: boolean; sitT: number; moveSpeed: number; sens: number; raf: number; userHeightCm: number }>({
+    camX: 0, camY: initialCamY, camZ: 0.9, yaw: Math.PI, pitch: -0.12,
     furniture: deepCopy(furniture), selectedId: null, hoveredId: null, heldId: null,
     darkMode: gs.settings.darkMode, showGuide: true, interactionMode: false,
     keys: {}, locked: false, sitting: false, sitT: 0, moveSpeed: 50, sens: 50, raf: 0,
+    userHeightCm: gs.settings.userHeightCm || 170,
   });
 
   // Joystick refs (Mobile)
@@ -253,18 +406,28 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
     world.current.darkMode = gs.settings.darkMode;
     world.current.moveSpeed = gs.settings.moveSpeed;
     world.current.sens = gs.settings.mouseSensitivity;
+    world.current.userHeightCm = gs.settings.userHeightCm || 170;
   }, [gs.settings]);
-
-  const steps = getSteps(furniture);
-  const score = calculateErgonomicScore(furniture);
-  const activeStep = steps.find(s => !s.done) || steps[steps.length - 1];
-  const selected = ui.selId ? furniture.find(f => f.id === ui.selId) ?? null : null;
 
   const toast = useCallback((m: string) => {
     setUi(p => ({ ...p, toast: m }));
     window.clearTimeout(toastT.current);
     toastT.current = window.setTimeout(() => setUi(p => ({ ...p, toast: '' })), 2600);
   }, []);
+
+  // Notifikasi ketika tinggi profil ergonomi diubah
+  const prevHeightRef = useRef(gs.settings.userHeightCm);
+  useEffect(() => {
+    if (prevHeightRef.current !== gs.settings.userHeightCm) {
+      prevHeightRef.current = gs.settings.userHeightCm;
+      toast(`🎯 Target ergonomi disesuaikan untuk tinggi ${gs.settings.userHeightCm} cm`);
+    }
+  }, [gs.settings.userHeightCm, toast]);
+
+  const steps = getSteps(furniture, gs.settings.userHeightCm);
+  const score = calculateErgonomicScore(furniture, gs.settings.userHeightCm);
+  const activeStep = steps.find(s => !s.done) || steps[steps.length - 1];
+  const selected = ui.selId ? furniture.find(f => f.id === ui.selId) ?? null : null;
 
   /* ── Pilih objek (untuk panel kiri / keyboard shortcut) ── */
   const selectItem = useCallback((id: string | null, silent = false) => {
@@ -287,8 +450,9 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
     heldId.current = null;
     world.current.heldId = null;
     setHeldName(null);
+    normalizeDeskItems(updated, gs.settings.userHeightCm);
     setFurniture(updated);
-  }, [setFurniture]);
+  }, [setFurniture, gs.settings.userHeightCm]);
 
   /* ── Ambil objek (Hold mechanic) ── */
   const pickupObject = useCallback((id: string) => {
@@ -335,7 +499,7 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
         const d = it.position.y - before;
         next.forEach(o => { if (o.type === 'monitor') o.position.y = clamp(o.position.y + d, o.minHeight, o.maxHeight); });
       }
-      normalizeDeskItems(next);
+      normalizeDeskItems(next, gs.settings.userHeightCm);
       world.current.furniture = deepCopy(next);
       return next;
     });
@@ -547,8 +711,10 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
       w.sitT += ((w.sitting ? 1 : 0) - w.sitT) * Math.min(1, dt * 6);
       const tX = chair.position.x, tZ = chair.position.z + 0.04;
       const chairSeatSurf = chair.position.y + chair.scale.y / 2;
-      const eyeSit = chairSeatSurf + 0.72;
-      w.camY += ((w.sitting ? eyeSit : 1.65) - w.camY) * Math.min(1, dt * 6);
+      const userScale = (w.userHeightCm || 170) / 170;
+      const eyeSit = chairSeatSurf + 0.72 * userScale;
+      const eyeStand = 1.65 * userScale;
+      w.camY += ((w.sitting ? eyeSit : eyeStand) - w.camY) * Math.min(1, dt * 6);
       if (w.sitT > 0.01) {
         w.camX += (tX - w.camX) * Math.min(1, dt * 5 * w.sitT);
         w.camZ += (tZ - w.camZ) * Math.min(1, dt * 5 * w.sitT);
@@ -739,7 +905,7 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
       </div>
 
       {/* ══ KARTU PENGATURAN (bawah tengah) — untuk height/rotate saja ══ */}
-      {selected && !heldName && <AdjustCard item={selected} all={furniture} onAct={a => applyRef.current(a)} onClose={() => selectItem(null)} guide={ui.guide}
+      {selected && !heldName && <AdjustCard item={selected} all={furniture} userHeightCm={gs.settings.userHeightCm} onAct={a => applyRef.current(a)} onClose={() => selectItem(null)} guide={ui.guide}
         onToggleGuide={() => { world.current.showGuide = !world.current.showGuide; setUi(p => ({ ...p, guide: world.current.showGuide })); }} />}
 
       {/* ══ HELD OBJECT CONTROLS (Tengah Bawah) ══ */}
@@ -834,8 +1000,8 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
 
       {/* ══ Status duduk ══ */}
       {ui.sitting && (
-        <div className="absolute bottom-[112px] left-1/2 -translate-x-1/2 bg-amber-500/90 text-white text-[12px] font-semibold px-4 py-1.5 rounded-full backdrop-blur-sm">
-          🪑 Mode duduk — tinggi mata mengikuti tinggi kursi · <b>C</b> berdiri
+        <div className="absolute bottom-[112px] left-1/2 -translate-x-1/2 bg-amber-500/90 text-white text-[12px] font-semibold px-4 py-1.5 rounded-full backdrop-blur-sm shadow-lg whitespace-nowrap">
+          🪑 Mode duduk (profil: {gs.settings.userHeightCm} cm) · tinggi mata proporsional · <b>C</b> berdiri
         </div>
       )}
 
@@ -846,9 +1012,9 @@ function Game({ furniture, setFurniture, gs, setGs, onEvaluate, onExit }: {
         </div>
       )}
 
-      {ui.help && <Modal title="❓ Bantuan" onClose={() => setUi(p => ({ ...p, help: false }))}><HelpBody isMobile={isMobile} /></Modal>}
+      {ui.help && <Modal title="❓ Bantuan" onClose={() => setUi(p => ({ ...p, help: false }))}><HelpBody isMobile={isMobile} userHeightCm={gs.settings.userHeightCm} /></Modal>}
       {gs.showSettings && <Modal title="⚙️ Pengaturan" onClose={() => setGs(p => ({ ...p, showSettings: false }))}>
-        <SettingsBody settings={gs.settings} upd={s => setGs(p => ({ ...p, settings: { ...p.settings, ...s } }))} />
+        <SettingsBody settings={gs.settings} upd={upd} />
       </Modal>}
     </div>
   );
@@ -885,11 +1051,11 @@ function StepRow({ step, n, active, selected, onClick }: { step: ErgoStep; n: nu
 }
 
 /* ══ Kartu pengaturan sederhana ══ */
-function AdjustCard({ item, all, onAct, onClose, guide, onToggleGuide }: {
-  item: FurnitureItem; all: FurnitureItem[]; onAct: (a: Action) => void; onClose: () => void; guide: boolean; onToggleGuide: () => void;
+function AdjustCard({ item, all, onAct, onClose, guide, onToggleGuide, userHeightCm = 170 }: {
+  item: FurnitureItem; all: FurnitureItem[]; onAct: (a: Action) => void; onClose: () => void; guide: boolean; onToggleGuide: () => void; userHeightCm?: number;
 }) {
-  const m = getMetric(item, all);
-  const s = getItemScore(item, all);
+  const m = getMetric(item, all, userHeightCm);
+  const s = getItemScore(item, all, userHeightCm);
   const col = s.status === 'good' ? '#22c55e' : s.status === 'warning' ? '#eab308' : '#ef4444';
   const pct = (v: number) => clamp(((v - m.barMin) / (m.barMax - m.barMin)) * 100, 0, 100);
   const zoneL = pct(m.target - m.tol), zoneW = pct(m.target + m.tol) - zoneL;
@@ -1002,7 +1168,9 @@ function Hold({ children, onAct, big, highlight }: { children: React.ReactNode; 
   );
 }
 
-function HelpBody({ isMobile = false }: { isMobile?: boolean }) {
+function HelpBody({ isMobile = false, userHeightCm = 170 }: { isMobile?: boolean; userHeightCm?: number }) {
+  const targets = getErgonomicTargets(userHeightCm);
+
   return (
     <div className="space-y-3 text-[13px] text-slate-300">
       <div className="bg-slate-900/60 rounded-xl p-3.5">
@@ -1051,12 +1219,13 @@ function HelpBody({ isMobile = false }: { isMobile?: boolean }) {
         </ol>
       </div>
       <div className="bg-emerald-900/25 border border-emerald-500/20 rounded-xl p-3.5">
-        <h3 className="text-emerald-400 font-bold mb-2 text-sm">📐 Acuan Standar</h3>
+        <h3 className="text-emerald-400 font-bold mb-2 text-sm">📐 Acuan Standar (Profil {userHeightCm} cm)</h3>
         <ul className="space-y-1 text-xs">
-          <li>🪑 Tinggi dudukan kursi <b className="text-white">±45 cm</b></li>
-          <li>🪵 Tinggi permukaan meja <b className="text-white">±73 cm</b></li>
-          <li>🖥️ Tengah layar <b className="text-white">±10 cm di bawah mata</b></li>
-          <li>📏 Jarak monitor <b className="text-white">50–70 cm</b></li>
+          <li>🪑 Tinggi dudukan kursi <b className="text-white">±{Math.round(targets.chairSeat * 100)} cm</b></li>
+          <li>🪵 Tinggi permukaan meja <b className="text-white">±{Math.round(targets.deskSurface * 100)} cm</b></li>
+          <li>💪 Selisih siku–meja <b className="text-white">±{Math.round(targets.elbowGap * 100)} cm</b></li>
+          <li>🖥️ Tengah layar <b className="text-white">±{Math.round(targets.monitorCenter * 100)} cm</b> (sejajar mata)</li>
+          <li>📏 Jarak monitor <b className="text-white">{Math.round(targets.monitorDist * 100)} cm</b></li>
           <li>⌨️ Keyboard <b className="text-white">10–15 cm</b> dari tepi meja</li>
           <li>🖱️ Mouse <b className="text-white">±28 cm</b> dari tengah keyboard</li>
         </ul>

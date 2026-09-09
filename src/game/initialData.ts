@@ -111,6 +111,7 @@ export const defaultSettings: GameSettings = {
   darkMode: false,
   graphicsQuality: 'high',
   device: 'desktop',
+  userHeightCm: 170,
 };
 
 export const initialGameState: GameState = {

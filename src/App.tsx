@@ -447,12 +447,17 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
 
   /* ── Pilih objek (untuk panel kiri / keyboard shortcut) ── */
   const selectItem = useCallback((id: string | null, silent = false) => {
+    const item = id ? world.current.furniture.find(f => f.id === id) : null;
+    if (world.current.sitting && item?.type === 'chair') {
+      if (!silent) toast('Berdiri dulu untuk memindahkan kursi.');
+      return;
+    }
     world.current.selectedId = id;
     world.current.interactionMode = !!id;
     if (id) document.exitPointerLock();
     setUi(p => ({ ...p, selId: id, adjust: !!id }));
     if (id && !silent) {
-      const it = world.current.furniture.find(f => f.id === id);
+      const it = item;
       if (it) toast(`${ICON[it.type]} ${it.name} siap diatur`);
     }
   }, [toast]);
@@ -472,9 +477,13 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
 
   /* ── Ambil objek (Hold mechanic) ── */
   const pickupObject = useCallback((id: string) => {
+    const it = world.current.furniture.find(f => f.id === id);
+    if (world.current.sitting && it?.type === 'chair') {
+      toast('Berdiri dulu untuk memindahkan kursi.');
+      return;
+    }
     heldId.current = id;
     world.current.heldId = id;
-    const it = world.current.furniture.find(f => f.id === id);
     if (it) {
       setHeldName(it.name);
       if (it.type === 'desk') {
@@ -484,6 +493,19 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
       }
     }
   }, [toast]);
+
+  const toggleSitting = useCallback(() => {
+    const w = world.current;
+    const enteringSit = !w.sitting;
+    const held = heldId.current ? w.furniture.find(f => f.id === heldId.current) : null;
+    if (enteringSit && held?.type === 'chair') commitHeld();
+    const selectedItem = w.selectedId ? w.furniture.find(f => f.id === w.selectedId) : null;
+    if (enteringSit && selectedItem?.type === 'chair') selectItem(null, true);
+    w.sitting = enteringSit;
+    setUi(p => ({ ...p, sitting: enteringSit }));
+    toast(enteringSit ? 'Duduk — kursi dikunci. Berdiri dulu untuk memindahkannya.' : 'Berdiri — kursi dapat dipindahkan lagi.');
+    if (enteringSit) { w.yaw = Math.PI; w.pitch = 0; }
+  }, [commitHeld, selectItem, toast]);
 
   /* ── Terapkan perubahan (tetap tersedia untuk AdjustCard & keyboard) ── */
   const applyRef = useRef<(a: Action) => void>(() => {});
@@ -530,10 +552,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
     const w = world.current;
 
     if (k === 'c') {
-      w.sitting = !w.sitting;
-      setUi(p => ({ ...p, sitting: w.sitting }));
-      toast(w.sitting ? 'Duduk — arahkan pandangan ke monitor, apakah sejajar mata?' : 'Berdiri');
-      if (w.sitting) { w.yaw = Math.PI; w.pitch = 0; }
+      toggleSitting();
     }
     if (k === 'g') { w.showGuide = !w.showGuide; setUi(p => ({ ...p, guide: w.showGuide })); }
     if (k === 'h') setUi(p => ({ ...p, help: !p.help }));
@@ -562,7 +581,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
         if (k === 'e') it.rotation.y = (it.rotation.y + 5) % 360;
       }
     }
-  }, [toast, selectItem, commitHeld, pickupObject]);
+  }, [toast, selectItem, commitHeld, pickupObject, toggleSitting]);
 
   const onKeyUp = useCallback((e: KeyboardEvent) => { world.current.keys[e.key.toLowerCase()] = false; }, []);
 
@@ -808,7 +827,9 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
 
       // ── Hover detection (hanya saat tidak ada yang dipegang) ──
       if (!heldId.current) {
-        const id = renderer.pick();
+        const hitId = renderer.pick();
+        const hitItem = hitId ? w.furniture.find(f => f.id === hitId) : null;
+        const id = w.sitting && hitItem?.type === 'chair' ? null : hitId;
         w.hoveredId = id;
         const n = id ? w.furniture.find(f => f.id === id)?.name ?? '' : '';
         if (n !== hoverName) { hoverName = n; setUi(p => ({ ...p, hoverName: n })); }
@@ -971,7 +992,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
           {/* Tombol Aksi Mobile */}
           <div className="absolute bottom-12 right-3 flex gap-2">
             <button
-              onTouchStart={e => { e.preventDefault(); world.current.sitting = !world.current.sitting; setUi(p => ({ ...p, sitting: world.current.sitting })); }}
+              onTouchStart={e => { e.preventDefault(); e.stopPropagation(); toggleSitting(); }}
               className="h-10 rounded-lg bg-amber-500/80 border border-amber-300/40 px-3 text-[12px] font-bold text-white backdrop-blur-sm active:scale-90 transition"
             >Duduk</button>
             <button

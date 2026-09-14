@@ -28,6 +28,14 @@ export interface RenderWorld {
   darkMode: boolean;
   showGuide: boolean;
   interactionMode: boolean;
+  doors: Door[];
+}
+
+export interface Door {
+  id: string;
+  label: string;
+  position: { x: number; y: number; z: number };
+  rotationY: number;
 }
 
 type V3 = [number, number, number];
@@ -240,6 +248,86 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
   const lampPartBufs = makePartBufs(LAMP_PARTS);
   const booksPartBufs = makePartBufs(BOOKS_PARTS);
   const cube = mkBuf(cubeV, cubeI);
+
+  // Model pintu dikirim sebagai GLB; loader kecil ini cukup untuk mesh statis
+  // (POSITION/NORMAL/indices) tanpa menambah library 3D baru ke aplikasi.
+  type DoorPart = { vb: WebGLBuffer; ib: WebGLBuffer; n: number; indexType: number; color: V3; tex: WebGLTexture | null };
+  let doorParts: DoorPart[] = [];
+  void fetch('/models/door.glb').then(r => r.arrayBuffer()).then(raw => {
+    const dv = new DataView(raw);
+    if (dv.getUint32(0, true) !== 0x46546c67) throw new Error('Format GLB tidak valid');
+    let offset = 12, json: any = null, bin: ArrayBuffer | null = null;
+    while (offset < raw.byteLength) {
+      const length = dv.getUint32(offset, true), kind = dv.getUint32(offset + 4, true);
+      const chunk = raw.slice(offset + 8, offset + 8 + length);
+      if (kind === 0x4e4f534a) json = JSON.parse(new TextDecoder().decode(chunk));
+      if (kind === 0x004e4942) bin = chunk;
+      offset += 8 + length;
+    }
+    if (!json || !bin) return;
+    const componentBytes: Record<number, number> = { 5121: 1, 5123: 2, 5125: 4, 5126: 4 };
+    const componentCount: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
+    const readAccessor = (index: number) => {
+      const a = json.accessors[index], view = json.bufferViews[a.bufferView];
+      const bytes = componentBytes[a.componentType], count = componentCount[a.type];
+      const byteOffset = (view.byteOffset || 0) + (a.byteOffset || 0);
+      return { a, view, bytes, count, byteOffset };
+    };
+    const imageTextures = new Map<number, WebGLTexture>();
+    const embeddedTexture = (imageIndex: number | undefined) => {
+      if (imageIndex === undefined) return null;
+      const old = imageTextures.get(imageIndex); if (old) return old;
+      const image = json.images?.[imageIndex], view = image && json.bufferViews?.[image.bufferView];
+      if (!image || !view) return null;
+      const tex = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+      const img = new Image();
+      img.onload = () => {
+        gl.bindTexture(gl.TEXTURE_2D, tex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      };
+      img.src = URL.createObjectURL(new Blob([bin.slice(view.byteOffset || 0, (view.byteOffset || 0) + view.byteLength)], { type: image.mimeType || 'image/png' }));
+      imageTextures.set(imageIndex, tex); return tex;
+    };
+    const parts: DoorPart[] = [];
+    for (const mesh of json.meshes || []) for (const primitive of mesh.primitives || []) {
+      if (primitive.attributes.POSITION === undefined || primitive.indices === undefined) continue;
+      const pos = readAccessor(primitive.attributes.POSITION);
+      const normal = primitive.attributes.NORMAL === undefined ? null : readAccessor(primitive.attributes.NORMAL);
+      const uv = primitive.attributes.TEXCOORD_0 === undefined ? null : readAccessor(primitive.attributes.TEXCOORD_0);
+      const vertexCount = pos.a.count;
+      const verts = new Float32Array(vertexCount * 8);
+      const pData = new DataView(bin, pos.byteOffset);
+      const nData = normal ? new DataView(bin, normal.byteOffset) : null;
+      const pStride = pos.view.byteStride || pos.bytes * pos.count;
+      const nStride = normal ? (normal.view.byteStride || normal.bytes * normal.count) : 0;
+      const uvData = uv ? new DataView(bin, uv.byteOffset) : null;
+      const uvStride = uv ? (uv.view.byteStride || uv.bytes * uv.count) : 0;
+      for (let i = 0; i < vertexCount; i++) {
+        for (let j = 0; j < 3; j++) {
+          verts[i * 8 + j] = pData.getFloat32(i * pStride + j * 4, true);
+          verts[i * 8 + 3 + j] = nData ? nData.getFloat32(i * nStride + j * 4, true) : (j === 1 ? 1 : 0);
+        }
+        verts[i * 8 + 6] = uvData ? uvData.getFloat32(i * uvStride, true) : 0;
+        verts[i * 8 + 7] = uvData ? uvData.getFloat32(i * uvStride + 4, true) : 0;
+      }
+      const idx = readAccessor(primitive.indices);
+      const indexType = idx.a.componentType === 5125 ? gl.UNSIGNED_INT : idx.a.componentType === 5123 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_BYTE;
+      const indices = new Uint8Array(bin, idx.byteOffset, idx.a.count * idx.bytes);
+      const material = json.materials?.[primitive.material ?? -1];
+      const factor = material?.pbrMetallicRoughness?.baseColorFactor || [0.42, 0.25, 0.12, 1];
+      const textureIndex = material?.pbrMetallicRoughness?.baseColorTexture?.index;
+      const textureSource = textureIndex === undefined ? undefined : json.textures?.[textureIndex]?.source;
+      const vb = gl.createBuffer()!, ib = gl.createBuffer()!;
+      gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+      parts.push({ vb, ib, n: idx.a.count, indexType, color: [factor[0], factor[1], factor[2]], tex: embeddedTexture(textureSource) });
+    }
+    doorParts = parts;
+  }).catch(() => { /* pintu tetap tidak mengganggu gameplay bila aset gagal dimuat */ });
 
   const seg = 20, cv: number[] = [], ci: number[] = [];
   for (let i = 0; i <= seg; i++) { const a = i/seg*Math.PI*2, c = Math.cos(a), s = Math.sin(a);
@@ -494,6 +582,24 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
 
   }
 
+  function door(door: Door) {
+    // Rotasi model diasumsikan menghadap sumbu +Z. Scale dibuat sesuai tinggi pintu ruangan.
+    // Satuan model sumber adalah sentimeter (tinggi sekitar 206), sedangkan dunia memakai meter.
+    const doorM = mul(mul(T(door.position.x, door.position.y, door.position.z), RY(door.rotationY)), S(0.01, 0.01, 0.01));
+    for (const part of doorParts) {
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, part.vb);
+      gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, part.ib);
+      gl!.enableVertexAttribArray(A.pos); gl!.vertexAttribPointer(A.pos, 3, gl!.FLOAT, false, 32, 0);
+      gl!.enableVertexAttribArray(A.norm); gl!.vertexAttribPointer(A.norm, 3, gl!.FLOAT, false, 32, 12);
+      if (A.uv >= 0) { gl!.enableVertexAttribArray(A.uv); gl!.vertexAttribPointer(A.uv, 2, gl!.FLOAT, false, 32, 24); }
+      gl!.uniform1f(U.useTex, part.tex ? 1 : 0); gl!.activeTexture(gl!.TEXTURE0); gl!.bindTexture(gl!.TEXTURE_2D, part.tex || whiteTex); gl!.uniform1i(U.tex, 0); gl!.uniformMatrix4fv(U.mvp, false, mul(vpM, doorM));
+      gl!.uniformMatrix4fv(U.model, false, doorM); gl!.uniformMatrix3fv(U.nmat, false, nMat(doorM));
+      gl!.uniform3fv(U.col, part.color); gl!.uniform3fv(U.cam, camP); gl!.uniform3f(U.l1, 1.6, 2.7, 0.6); gl!.uniform3f(U.l2, -2.2, 2.4, -2.0);
+      gl!.uniform1f(U.sel, 0); gl!.uniform1f(U.hov, 0); gl!.uniform1f(U.time, now); gl!.uniform1f(U.ghost, 0); gl!.uniform1f(U.emis, 0); gl!.uniform1f(U.held, 0);
+      gl!.disable(gl!.CULL_FACE); gl!.drawElements(gl!.TRIANGLES, part.n, part.indexType, 0); gl!.enable(gl!.CULL_FACE);
+    }
+  }
+
 
 
 
@@ -548,6 +654,11 @@ export function createRenderer(canvas: HTMLCanvasElement, getWorld: () => Render
       if (deskItem) deskSurf = deskSurfaceY(deskItem);
 
       room(d);
+      // Pintu ditempel ke bidang dinding. Bersihkan depth dinding sebelum menggambarnya
+      // supaya variasi ketebalan mesh GLB tidak membuat pintu terpotong/tenggelam.
+      // Furnitur tetap dirender sesudahnya dan masih dapat menutup pintu secara normal.
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      for (const entry of w.doors) door(entry);
 
       for (const it of w.furniture) {
         curSel = it.id === w.selectedId;

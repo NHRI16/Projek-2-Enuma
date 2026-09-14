@@ -5,7 +5,7 @@ import {
   calculateErgonomicScore, getItemScore, getMetric, getSteps,
   normalizeDeskItems, getErgonomicTargets, ErgoStep, deskSurfaceY,
 } from './game/ergonomics';
-import { createRenderer, RenderWorld, raycastPlane, pickBox, rayHit } from './game/renderer';
+import { createRenderer, RenderWorld, Door, raycastPlane, pickBox, rayHit } from './game/renderer';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const deepCopy = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
@@ -386,6 +386,17 @@ function Results({ score, userHeightCm, onMenu, onRetry }: { score: ErgonomicSco
 /* ═══════════════════════ GAME ═══════════════════════ */
 type Action = 'up' | 'down' | 'fwd' | 'back' | 'left' | 'right' | 'rotL' | 'rotR';
 
+// Ganti URL ini dengan deployment Vercel proyek Ergo tujuan yang sebenarnya.
+const DOOR_DESTINATIONS: (Door & { url: string })[] = [
+  // Offset 0,001 m (±1 mm): sedekat mungkin dengan dinding tanpa z-fighting/tembus mesh.
+  { id: 'door-left', label: 'Ergo Workspace', position: { x: -2.6350, y: 1.04, z: 0.35 }, rotationY: 0, url: 'https://prjk3-ergonomi-dapur.vercel.app/' },
+  // Dikembalikan ke sisi kanan seperti sebelumnya.
+  { id: 'door-right', label: 'Ergo Focus', position: { x: 2.6356, y: 1.04, z: 0.35 }, rotationY: 0, url: 'https://prjk3-ergonomi-dapur.vercel.app/' },
+  // Pintu yang sebelumnya berada di belakang monitor dipindahkan ke dinding berlawanan.
+  // 5 mm ke dalam agar pintu dinding berlawanan tidak tertutup depth buffer saat dilihat menyamping.
+  { id: 'door-back', label: 'Ergo Break', position: { x: 0, y: 1.04, z: 2.982 }, rotationY: Math.PI / 2, url: 'https://your-ergo-break.vercel.app/' },
+];
+
 // ref untuk menyimpan state joystick mobile (tidak perlu re-render)
 type JoyState = { active: boolean; id: number; x: number; y: number; dx: number; dy: number };
 const mkJoy = (): JoyState => ({ active: false, id: -1, x: 0, y: 0, dx: 0, dy: 0 });
@@ -405,7 +416,7 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
   const world = useRef<RenderWorld & { keys: Record<string, boolean>; locked: boolean; sitting: boolean; sitT: number; moveSpeed: number; sens: number; touchSens: number; raf: number; userHeightCm: number }>({
     camX: 0, camY: initialCamY, camZ: 0.9, yaw: Math.PI, pitch: -0.12,
     furniture: deepCopy(furniture), selectedId: null, hoveredId: null, heldId: null,
-    darkMode: gs.settings.darkMode, showGuide: true, interactionMode: false,
+    darkMode: gs.settings.darkMode, showGuide: true, interactionMode: false, doors: DOOR_DESTINATIONS,
     keys: {}, locked: false, sitting: false, sitT: 0, moveSpeed: 50, sens: 50, touchSens: 25, raf: 0,
     userHeightCm: gs.settings.userHeightCm || 170,
   });
@@ -418,6 +429,17 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
   const [heldName, setHeldName] = useState<string | null>(null);
 
   const [ui, setUi] = useState({ selId: null as string | null, adjust: false, sitting: false, hoverName: '', help: false, guide: true, toast: '' });
+  const [doorPrompt, setDoorPrompt] = useState<(typeof DOOR_DESTINATIONS)[number] | null>(null);
+  const doorPromptRef = useRef<string | null>(null);
+  const cancelDoorPrompt = useCallback(() => {
+    const w = world.current;
+    // Geser pemain sedikit ke dalam ruangan agar tidak langsung menyentuh pintu lagi.
+    if (doorPromptRef.current === 'door-left') w.camX = -1.55;
+    if (doorPromptRef.current === 'door-right') w.camX = 1.55;
+    if (doorPromptRef.current === 'door-back') w.camZ = 1.85;
+    doorPromptRef.current = null;
+    setDoorPrompt(null);
+  }, []);
   const toastT = useRef<number>(0);
 
   useEffect(() => { world.current.furniture = deepCopy(furniture); }, [furniture]);
@@ -807,6 +829,15 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
       }
 
       // ── Enforce Desk Bounds & Hierarchy ──
+      if (!doorPromptRef.current && !w.sitting) {
+        const nearbyDoor = DOOR_DESTINATIONS.find(door => Math.hypot(w.camX - door.position.x, w.camZ - door.position.z) < 0.62);
+        if (nearbyDoor) {
+          doorPromptRef.current = nearbyDoor.id;
+          document.exitPointerLock();
+          setDoorPrompt(nearbyDoor);
+        }
+      }
+
       const desk = w.furniture.find(f => f.type === 'desk');
       if (desk) {
         if (!initDesk) {
@@ -930,6 +961,20 @@ function Game({ furniture, setFurniture, gs, setGs, upd, onEvaluate, onExit }: {
   return (
     <div className="fixed inset-0 bg-black overflow-hidden select-none">
       <canvas ref={canvasRef} className="block w-full h-full" />
+
+      {doorPrompt && (
+        <div className="absolute inset-0 z-[70] grid place-items-center bg-slate-950/65 p-5 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl border border-indigo-300/30 bg-slate-900 p-6 text-center shadow-2xl">
+            <div className="text-4xl">🚪</div>
+            <h2 className="mt-3 text-xl font-black text-white">Masuk ke {doorPrompt.label}?</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">Anda akan diarahkan ke proyek Ergo lain dengan konsep berbeda.</p>
+            <div className="mt-6 flex gap-3">
+              <button onClick={cancelDoorPrompt} className="flex-1 rounded-xl border border-slate-600 py-3 text-sm font-bold text-slate-200 hover:bg-slate-800">Tidak</button>
+              <button onClick={() => { window.location.assign(doorPrompt.url); }} className="flex-1 rounded-xl bg-indigo-500 py-3 text-sm font-bold text-white hover:bg-indigo-400">Iya</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isVr && vrStatus !== 'active' && (
         <div className="absolute inset-0 z-50 grid place-items-center bg-black/55 backdrop-blur-sm">

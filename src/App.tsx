@@ -389,7 +389,7 @@ type Action = 'up' | 'down' | 'fwd' | 'back' | 'left' | 'right' | 'rotL' | 'rotR
 // Ganti URL ini dengan deployment Vercel proyek Ergo tujuan yang sebenarnya.
 const DOOR_DESTINATIONS: (Door & { url: string })[] = [
   // Offset 0,001 m (±1 mm): sedekat mungkin dengan dinding tanpa z-fighting/tembus mesh.
-  { id: 'door-left', label: 'Ergo Workspace', position: { x: -2.6350, y: 1.04, z: 0.35 }, rotationY: 0, url: 'https://prjk3-ergonomi-dapur.vercel.app/' },
+  { id: 'door-left', label: 'ErgoPur', position: { x: -2.6350, y: 1.04, z: 0.35 }, rotationY: 0, url: 'https://make-us61.vercel.app/' },
   // Dikembalikan ke sisi kanan seperti sebelumnya.
   { id: 'door-right', label: 'Ergo Focus', position: { x: 2.6356, y: 1.04, z: 0.35 }, rotationY: 0, url: 'https://prjk3-ergonomi-dapur.vercel.app/' },
   // Pintu yang sebelumnya berada di belakang monitor dipindahkan ke dinding berlawanan.
